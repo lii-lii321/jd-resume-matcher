@@ -8,6 +8,7 @@
   python cli.py jd.txt --resume-dir resumes/       # 批量模式：一份 JD 对目录下全部简历
                                                    # 按总分降序输出候选名单；
                                                    # 配 --min-score 时无人达标退出码 1
+  python cli.py jd.txt --resume-dir resumes/ --csv out.csv   # 批量结果导出 CSV（utf-8-sig）
 """
 
 import argparse
@@ -16,6 +17,7 @@ import sys
 from pathlib import Path
 
 from matcher.batch import match_directory
+from matcher.export import write_batch_csv
 from matcher.service import match_jd_resume
 
 _DEMO_JD = """# 招聘：后端开发工程师（Python）
@@ -108,6 +110,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("jd", nargs="?", help="JD 文本文件路径")
     parser.add_argument("resume", nargs="?", help="简历文本文件路径（批量模式下不传）")
     parser.add_argument("--resume-dir", default=None, help="批量模式：简历目录（.md/.txt，不递归），需同时给 JD 文件")
+    parser.add_argument("--csv", default=None, help="批量模式：把候选名单导出为 CSV 文件（utf-8-sig，Excel 友好）")
     parser.add_argument("--demo", action="store_true", help="使用内置示例对运行")
     parser.add_argument("--no-semantic", action="store_true", help="禁用语义因素（纯规则）")
     parser.add_argument("--provider", choices=["mock", "openai_compatible"], default="mock")
@@ -116,6 +119,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="输出 JSON")
     parser.add_argument("--min-score", type=float, default=None, help="低于该分退出码为 1（批量模式：无人达标退出码 1）")
     args = parser.parse_args(argv)
+
+    if args.csv and not args.resume_dir:
+        parser.error("--csv 仅支持批量模式（配合 --resume-dir 使用）")
 
     common_kwargs = dict(
         use_semantic=not args.no_semantic,
@@ -161,6 +167,10 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(batch.model_dump(), ensure_ascii=False, indent=2))
         else:
             _print_batch_report(batch)
+
+        if args.csv:
+            csv_path = write_batch_csv(batch, args.csv)
+            print(f"已导出 CSV: {csv_path}（成功 {batch.matched} / 失败 {batch.failed}，utf-8-sig）")
 
         # 批量闸门语义：无人达标（或全员失败）视为未通过，退出码 1
         if args.min_score is not None and not batch.passed(args.min_score):

@@ -1,5 +1,7 @@
-"""CLI 测试：演示模式、JSON 输出与分数闸门；批量模式（--resume-dir）。"""
+"""CLI 测试：演示模式、JSON 输出与分数闸门；批量模式（--resume-dir）与 CSV 导出。"""
 
+import csv
+import io
 import json
 
 import pytest
@@ -108,4 +110,25 @@ def test_batch_mode_rejects_dir_without_supported_files(tmp_path, capsys):
     (tmp_path / "resumes" / "a.docx").write_text(_RESUME, encoding="utf-8")
     with pytest.raises(SystemExit) as excinfo:
         main([str(jd), "--resume-dir", str(tmp_path / "resumes")])
+    assert excinfo.value.code != 0
+
+
+def test_batch_mode_csv_export(batch_dir, tmp_path, capsys):
+    jd, d = batch_dir
+    out = tmp_path / "ranked.csv"
+    assert main([str(jd), "--resume-dir", str(d), "--csv", str(out)]) == 0
+    assert "已导出 CSV" in capsys.readouterr().out
+    raw = out.read_bytes()
+    assert raw.startswith(b"\xef\xbb\xbf")  # utf-8-sig，Excel 友好
+    rows = list(csv.reader(io.StringIO(out.read_text(encoding="utf-8-sig"))))
+    assert rows[0][0] == "rank" and len(rows) == 3  # 表头 + 成功 1 + 失败 1
+
+
+def test_csv_rejected_outside_batch_mode(tmp_path, capsys):
+    jd = tmp_path / "jd.txt"
+    jd.write_text(_JD, encoding="utf-8")
+    resume = tmp_path / "resume.md"
+    resume.write_text(_RESUME, encoding="utf-8")
+    with pytest.raises(SystemExit) as excinfo:
+        main([str(jd), str(resume), "--csv", str(tmp_path / "x.csv")])
     assert excinfo.value.code != 0

@@ -9,9 +9,9 @@ JD↔简历结构化匹配与解释器：纯离线规则抽取 + 多因素加权
 - **输入**：职位描述 + 简历文本（Markdown / 纯文本均可），或一份 JD 对目录下多份简历
 - **解析**：规则 + 关键词抽取技能（40+ 规范名，含别名归一）、学历阶梯、工作年限、领域标签，**不依赖 LLM，离线可跑、结果确定**
 - **打分**：六因素加权 `total_score` + `score_breakdown` + 逐条 `reasons`，权重集中在 `matcher/constants.py` 并逐条注明设计依据
-- **批量模式**：`--resume-dir` 一份 JD 筛整个简历文件夹，按总分降序输出候选名单；单份文件损坏/为空只记失败不中断整批，`--min-score` 做"无人达标即失败"的流水线闸门
+- **批量模式**：`--resume-dir` 一份 JD 筛整个简历文件夹，按总分降序输出候选名单；单份文件损坏/为空只记失败不中断整批，`--min-score` 做"无人达标即失败"的流水线闸门，`--csv` 导出 utf-8-sig 候选名单（Excel 友好）
 - **语义路**：嵌入 provider 可插拔 —— `mock`（确定性字符 3-gram 哈希，默认）与 `openai_compatible`（可选）；无 API Key / URL 非法 / 调用失败时**三级优雅降级**到纯规则
-- **交付**：FastAPI `/match` 端点 + CLI 演示命令 + 80 个 pytest 全绿
+- **交付**：FastAPI `/match` 端点 + CLI 演示命令 + 87 个 pytest 全绿
 
 ## 架构
 
@@ -45,7 +45,10 @@ python cli.py examples/jd_backend.md examples/resume_strong.md
 # 4. 批量模式：一份 JD 对目录下全部简历（.md/.txt），按总分降序输出候选名单
 python cli.py examples/jd_backend.md --resume-dir examples/batch_resumes
 
-# 5. 启动 API
+# 5. 批量结果导出 CSV（utf-8-sig，Excel 双击打开中文不乱码）
+python cli.py examples/jd_backend.md --resume-dir examples/batch_resumes --csv ranked.csv
+
+# 6. 启动 API
 uvicorn matcher.main:app --port 8000
 ```
 
@@ -77,6 +80,15 @@ EOF
 ```
 
 失败条目（如空文件、超过 5 万字符上限）列在名单末尾并附原因，`--json` 时以 `error` 字段给出，`total/matched/failed` 计数齐全。
+
+批量模式加 `--csv 路径` 可把候选名单导出为 CSV（utf-8-sig 带 BOM，Excel 直接打开不乱码），列为扁平汇总：`rank, resume_path, total_score, grade, grade_label, missing_required_skills, semantic_enabled, provider, error`，真实运行示例（`examples/jd_backend.md --resume-dir examples/batch_resumes --csv`）：
+
+```
+rank,resume_path,total_score,grade,grade_label,missing_required_skills,semantic_enabled,provider,error
+1,chen_ming.md,84.6,B,推荐,RESTful API,1,mock,
+2,lin_xiaoyu.md,48.5,D,不匹配,Docker、FastAPI、RESTful API、Redis,1,mock,
+3,wang_dalisheng.md,29.7,D,不匹配,Docker、FastAPI、Python、RESTful API、Redis、SQL、大数据,1,mock,
+```
 
 ## 评分设计
 
@@ -113,7 +125,7 @@ provider 不可用时自动降级并在 `degraded_note` 里说明原因，打分
 
 本机（Windows 10，Python 3.10.9）实测，以下数字均为真实运行结果：
 
-- **测试**：`python -m pytest -q` → `80 passed in 2.05s`
+- **测试**：`python -m pytest -q` → `87 passed in 1.95s`
 - **依赖**：`requirements.txt` 钉死本机实测通过的精确版本（CI 可复现）；`pyproject.toml` 提供库语义的版本范围
 - **示例匹配**（`examples/` 真实运行）：
 
@@ -140,11 +152,12 @@ jd-resume-matcher/
 │   ├── scoring.py      # 加权打分器
 │   ├── embeddings.py   # 可插拔 provider + URL 安全校验
 │   ├── batch.py        # 批量匹配：文件枚举 + 容错 + 排序
+│   ├── export.py       # 批量结果 CSV 导出（utf-8-sig）
 │   ├── service.py      # 服务层管线（API 与 CLI 共用）
 │   └── main.py         # FastAPI 入口
 ├── cli.py              # CLI 演示命令（单对 + 批量模式）
 ├── examples/           # 示例 JD、简历与批量目录 batch_resumes/
-├── tests/              # 80 个测试
+├── tests/              # 87 个测试
 ├── pyproject.toml      # 包元数据与依赖范围（精确锁定见 requirements.txt）
 └── .github/workflows/ci.yml
 ```
@@ -160,7 +173,7 @@ jd-resume-matcher/
 5. **年限抽取较保守**：只认 0.5-50 区间的数字/中文数字；"两年半""应届生"等表述不识别，超范围数字（如"2020年"）按年份误报过滤。
 6. **学历归一有假设**："研究生"默认按硕士；`b.s.` 等带点缩写因整词边界实现可能漏识别。
 7. **专业仅解析不打分**：简历专业名与 JD"计算机相关"没有对齐词表，专业匹配只出现在解析结果里。
-8. **批量模式是串行扫描**：只认目录顶层 `.md`/`.txt`（不递归子目录），逐份同步打分，大目录（百份以上）无并发与进度输出；批量结果不带逐条评分明细，需回单条模式查看。
+8. **批量模式是串行扫描**：只认目录顶层 `.md`/`.txt`（不递归子目录），逐份同步打分，大目录（百份以上）无并发与进度输出；批量结果不带逐条评分明细，需回单条模式查看；`--csv` 导出的也是扁平汇总列（名次/总分/等级/缺口），不含逐因素 `score_breakdown`。
 9. **无鉴权**：`/match` 适合本地/内网演示；公网部署需自行加网关鉴权与限流（输入已限 5 万字符）。
 
 ## License
