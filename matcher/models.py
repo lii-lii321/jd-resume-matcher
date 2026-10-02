@@ -101,3 +101,28 @@ class MatchResult(BaseModel):
     degraded_note: str | None = Field(default=None, description="provider 降级/禁用原因")
     jd_profile: ParsedProfile | None = None
     resume_profile: ParsedProfile | None = None
+
+
+class BatchEntry(BaseModel):
+    """批量匹配中的一份简历：成功则携带 MatchResult，失败则携带 error 说明。"""
+
+    resume_path: str = Field(description="简历文件路径（相对传入目录）")
+    result: MatchResult | None = None
+    error: str | None = Field(default=None, description="读取/大小校验失败原因；成功时为 None")
+
+
+class BatchResult(BaseModel):
+    """一份 JD 对目录下多份简历的批量匹配汇总。
+
+    entries 已排序：成功条目按 total_score 降序在前，失败条目按文件名序殿后。
+    """
+
+    jd_path: str
+    total: int
+    matched: int
+    failed: int
+    entries: list[BatchEntry]
+
+    def passed(self, min_score: float) -> list[BatchEntry]:
+        """达标简历（total_score >= min_score），供闸门语义复用。"""
+        return [e for e in self.entries if e.result is not None and e.result.total_score >= min_score]

@@ -1,10 +1,13 @@
 """CLI 演示命令。
 
 用法：
-  python cli.py examples/jd_backend.md examples/resume_chen.md
+  python cli.py examples/jd_backend.md examples/resume_strong.md
   python cli.py --demo                     # 内置示例对，零参数可跑
   python cli.py jd.txt resume.txt --json   # 机器可读输出
   python cli.py jd.txt resume.txt --min-score 70   # 低于阈值退出码 1，便于流水线闸门
+  python cli.py jd.txt --resume-dir resumes/       # 批量模式：一份 JD 对目录下全部简历
+                                                   # 按总分降序输出候选名单；
+                                                   # 配 --min-score 时无人达标退出码 1
 """
 
 import argparse
@@ -12,6 +15,7 @@ import json
 import sys
 from pathlib import Path
 
+from matcher.batch import match_directory
 from matcher.service import match_jd_resume
 
 _DEMO_JD = """# 招聘：后端开发工程师（Python）
@@ -79,40 +83,98 @@ def _print_report(result, jd_path: str, resume_path: str) -> None:
     print("=" * 64)
 
 
+def _print_batch_report(batch) -> None:
+    """批量模式摘要：按总分降序的候选名单，细节看单条模式。"""
+    print("=" * 64)
+    print(f"批量匹配报告    JD: {batch.jd_path}    共 {batch.total} 份（成功 {batch.matched} / 失败 {batch.failed}）")
+    print("=" * 64)
+    rank = 0
+    for entry in batch.entries:
+        if entry.result is not None:
+            rank += 1
+            r = entry.result
+            gap = f"    缺口: {'、'.join(r.missing_required_skills)}" if r.missing_required_skills else ""
+            print(f"{rank:>3}. {entry.resume_path}    {r.total_score:>5.1f}  {r.grade} {r.grade_label}{gap}")
+        else:
+            print(f"  ✗ {entry.resume_path}    读取失败：{entry.error}")
+    print("=" * 64)
+
+
 def main(argv: list[str] | None = None) -> int:
     if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
     parser = argparse.ArgumentParser(description="JD↔简历匹配解释器（离线规则 + 可插拔语义）")
     parser.add_argument("jd", nargs="?", help="JD 文本文件路径")
-    parser.add_argument("resume", nargs="?", help="简历文本文件路径")
+    parser.add_argument("resume", nargs="?", help="简历文本文件路径（批量模式下不传）")
+    parser.add_argument("--resume-dir", default=None, help="批量模式：简历目录（.md/.txt，不递归），需同时给 JD 文件")
     parser.add_argument("--demo", action="store_true", help="使用内置示例对运行")
     parser.add_argument("--no-semantic", action="store_true", help="禁用语义因素（纯规则）")
     parser.add_argument("--provider", choices=["mock", "openai_compatible"], default="mock")
     parser.add_argument("--base-url", default=None, help="openai_compatible 的 /v1 根地址")
     parser.add_argument("--model", default=None, help="嵌入模型名")
     parser.add_argument("--json", action="store_true", help="输出 JSON")
-    parser.add_argument("--min-score", type=float, default=None, help="低于该分退出码为 1")
+    parser.add_argument("--min-score", type=float, default=None, help="低于该分退出码为 1（批量模式：无人达标退出码 1）")
     args = parser.parse_args(argv)
 
-    if args.demo:
-        jd_text, resume_text = _DEMO_JD, _DEMO_RESUME
-        jd_label, resume_label = "<内置示例JD>", "<内置示例简历>"
-    else:
-        if not (args.jd and args.resume):
-            parser.error("需要提供 JD 与简历文件路径，或使用 --demo")
-        jd_text, resume_text = _read_text(args.jd), _read_text(args.resume)
-        jd_label, resume_label = args.jd, args.resume
-
-    result = match_jd_resume(
-        jd_text=jd_text,
-        resume_text=resume_text,
+    common_kwargs = dict(
         use_semantic=not args.no_semantic,
         provider_name=args.provider,
         base_url=args.base_url,
         model=args.model,
         include_profiles=False,
     )
+
+    if args.demo:
+        jd_text, resume_text = _DEMO_JD, _DEMO_RESUME
+        jd_label, resume_label = "<内置示例JD>", "<内置示例简历>"
+        result = match_jd_resume(jd_text=jd_text, resume_text=resume_text, **common_kwargs)
+
+        if args.json:
+            print(json.dumps(result.model_dump(), ensure_ascii=False, indent=2))
+        else:
+            _print_report(result, jd_label, resume_label)
+
+        if args.min_score is not None and result.total_score < args.min_score:
+            print(f"总分 {result.total_score} 低于阈值 {args.min_score}", file=sys.stderr)
+            return 1
+        return 0
+
+    if args.resume_dir:
+        if not args.jd:
+            parser.error("批量模式需要提供 JD 文件路径")
+        if args.resume:
+            parser.error("批量模式只接受 JD + --resume-dir，不支持第二个位置参数")
+        resume_dir = Path(args.resume_dir)
+        if not resume_dir.is_dir():
+            parser.error(f"简历目录不存在：{args.resume_dir}")
+        batch = match_directory(
+            jd_text=_read_text(args.jd),
+            resume_dir=resume_dir,
+            jd_path_label=args.jd,
+            **common_kwargs,
+        )
+        if batch.total == 0:
+            parser.error(f"目录中没有受支持的简历文件（.md/.txt）：{args.resume_dir}")
+
+        if args.json:
+            print(json.dumps(batch.model_dump(), ensure_ascii=False, indent=2))
+        else:
+            _print_batch_report(batch)
+
+        # 批量闸门语义：无人达标（或全员失败）视为未通过，退出码 1
+        if args.min_score is not None and not batch.passed(args.min_score):
+            print(f"无人达到阈值 {args.min_score}（最高 {batch.entries[0].result.total_score if batch.matched else '无'}）",
+                  file=sys.stderr)
+            return 1
+        return 0
+
+    if not (args.jd and args.resume):
+        parser.error("需要提供 JD 与简历文件路径，或使用 --demo / --resume-dir 批量模式")
+    jd_text, resume_text = _read_text(args.jd), _read_text(args.resume)
+    jd_label, resume_label = args.jd, args.resume
+
+    result = match_jd_resume(jd_text=jd_text, resume_text=resume_text, **common_kwargs)
 
     if args.json:
         print(json.dumps(result.model_dump(), ensure_ascii=False, indent=2))

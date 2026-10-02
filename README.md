@@ -6,11 +6,12 @@ JD↔简历结构化匹配与解释器：纯离线规则抽取 + 多因素加权
 
 ## 功能特性
 
-- **输入**：职位描述 + 简历文本（Markdown / 纯文本均可）
+- **输入**：职位描述 + 简历文本（Markdown / 纯文本均可），或一份 JD 对目录下多份简历
 - **解析**：规则 + 关键词抽取技能（40+ 规范名，含别名归一）、学历阶梯、工作年限、领域标签，**不依赖 LLM，离线可跑、结果确定**
 - **打分**：六因素加权 `total_score` + `score_breakdown` + 逐条 `reasons`，权重集中在 `matcher/constants.py` 并逐条注明设计依据
+- **批量模式**：`--resume-dir` 一份 JD 筛整个简历文件夹，按总分降序输出候选名单；单份文件损坏/为空只记失败不中断整批，`--min-score` 做"无人达标即失败"的流水线闸门
 - **语义路**：嵌入 provider 可插拔 —— `mock`（确定性字符 3-gram 哈希，默认）与 `openai_compatible`（可选）；无 API Key / URL 非法 / 调用失败时**三级优雅降级**到纯规则
-- **交付**：FastAPI `/match` 端点 + CLI 演示命令 + 62 个 pytest 全绿
+- **交付**：FastAPI `/match` 端点 + CLI 演示命令 + 80 个 pytest 全绿
 
 ## 架构
 
@@ -41,7 +42,10 @@ python cli.py --demo
 # 3. CLI：指定 JD 与简历文件
 python cli.py examples/jd_backend.md examples/resume_strong.md
 
-# 4. 启动 API
+# 4. 批量模式：一份 JD 对目录下全部简历（.md/.txt），按总分降序输出候选名单
+python cli.py examples/jd_backend.md --resume-dir examples/batch_resumes
+
+# 5. 启动 API
 uvicorn matcher.main:app --port 8000
 ```
 
@@ -58,7 +62,21 @@ EOF
 
 响应核心字段：`total_score`（0-100）、`grade`/`grade_label`（A 强烈推荐 / B 推荐 / C 待定 / D 不匹配）、`score_breakdown`（逐因素：基础权重、生效权重、得分、理由）、每条 `reason` 附 `evidence[]`（原文片段 + 字符偏移 + 来自 JD/简历）。
 
-可选命令行参数：`--no-semantic`（纯规则）、`--json`、`--min-score N`（低于阈值退出码 1，可做流水线闸门）、`--provider openai_compatible --base-url ... --model ...`。
+可选命令行参数：`--no-semantic`（纯规则）、`--json`、`--min-score N`（低于阈值退出码 1，可做流水线闸门；批量模式语义为"无人达标退出码 1"）、`--resume-dir 目录`（批量模式，需同时给 JD 文件）、`--provider openai_compatible --base-url ... --model ...`。
+
+批量模式输出示例（真实运行）：
+
+```
+================================================================
+批量匹配报告    JD: examples/jd_backend.md    共 3 份（成功 3 / 失败 0）
+================================================================
+  1. chen_ming.md     84.6  B 推荐    缺口: RESTful API
+  2. lin_xiaoyu.md     48.5  D 不匹配    缺口: Docker、FastAPI、RESTful API、Redis
+  3. wang_dalisheng.md     29.7  D 不匹配    缺口: Docker、FastAPI、Python、RESTful API、Redis、SQL、大数据
+================================================================
+```
+
+失败条目（如空文件、超过 5 万字符上限）列在名单末尾并附原因，`--json` 时以 `error` 字段给出，`total/matched/failed` 计数齐全。
 
 ## 评分设计
 
@@ -95,9 +113,9 @@ provider 不可用时自动降级并在 `degraded_note` 里说明原因，打分
 
 本机（Windows 10，Python 3.10.9）实测，以下数字均为真实运行结果：
 
-- **测试**：`python -m pytest -q` → `62 passed in 1.54s`
+- **测试**：`python -m pytest -q` → `80 passed in 2.05s`
 - **依赖**：`requirements.txt` 钉死本机实测通过的精确版本（CI 可复现）；`pyproject.toml` 提供库语义的版本范围
-- **示例匹配**（`examples/` 四组真实运行）：
+- **示例匹配**（`examples/` 真实运行）：
 
 | JD | 简历 | 总分 | 等级 |
 |---|---|---|---|
@@ -105,6 +123,8 @@ provider 不可用时自动降级并在 `degraded_note` 里说明原因，打分
 | jd_backend.md | resume_gap.md | 42.6 | D 不匹配 |
 | jd_data.md | resume_strong.md | 55.0 | C 待定 |
 | jd_backend.md | resume_gap.md（--no-semantic） | 43.6 | D 不匹配 |
+
+- **批量匹配**（`python cli.py examples/jd_backend.md --resume-dir examples/batch_resumes`，真实运行）：成功 3 / 失败 0，排序 chen_ming 84.6（B）> lin_xiaoyu 48.5（D）> wang_dalisheng 29.7（D）；`--min-score 90` 退出码 1、`--min-score 80` 退出码 0，闸门语义双向实测
 
 语义因素关掉的对比说明：gap 简历与后端 JD 字面重叠低，mock 语义分低于其余因素均值，开启后总分略降 1 分 —— 小权重信号双向起作用，属预期行为而非缺陷。
 
@@ -119,11 +139,12 @@ jd-resume-matcher/
 │   ├── parser.py       # 规则解析器
 │   ├── scoring.py      # 加权打分器
 │   ├── embeddings.py   # 可插拔 provider + URL 安全校验
+│   ├── batch.py        # 批量匹配：文件枚举 + 容错 + 排序
 │   ├── service.py      # 服务层管线（API 与 CLI 共用）
 │   └── main.py         # FastAPI 入口
-├── cli.py              # CLI 演示命令
-├── examples/           # 示例 JD 与简历
-├── tests/              # 62 个测试
+├── cli.py              # CLI 演示命令（单对 + 批量模式）
+├── examples/           # 示例 JD、简历与批量目录 batch_resumes/
+├── tests/              # 80 个测试
 ├── pyproject.toml      # 包元数据与依赖范围（精确锁定见 requirements.txt）
 └── .github/workflows/ci.yml
 ```
@@ -139,7 +160,8 @@ jd-resume-matcher/
 5. **年限抽取较保守**：只认 0.5-50 区间的数字/中文数字；"两年半""应届生"等表述不识别，超范围数字（如"2020年"）按年份误报过滤。
 6. **学历归一有假设**："研究生"默认按硕士；`b.s.` 等带点缩写因整词边界实现可能漏识别。
 7. **专业仅解析不打分**：简历专业名与 JD"计算机相关"没有对齐词表，专业匹配只出现在解析结果里。
-8. **无鉴权**：`/match` 适合本地/内网演示；公网部署需自行加网关鉴权与限流（输入已限 5 万字符）。
+8. **批量模式是串行扫描**：只认目录顶层 `.md`/`.txt`（不递归子目录），逐份同步打分，大目录（百份以上）无并发与进度输出；批量结果不带逐条评分明细，需回单条模式查看。
+9. **无鉴权**：`/match` 适合本地/内网演示；公网部署需自行加网关鉴权与限流（输入已限 5 万字符）。
 
 ## License
 
