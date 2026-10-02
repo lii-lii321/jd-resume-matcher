@@ -19,9 +19,16 @@ def _run(jd_text=JD_FULL, resume_text=RESUME_FULL, scorer=None):
     return compute_match(jd_text, resume_text, jd, resume, semantic_scorer=scorer), jd, resume
 
 
-def test_total_score_within_bounds():
-    (total, *_rest) = _run()[0]
-    assert 0.0 <= total <= 100.0
+def test_perfect_match_scores_exact_100():
+    # JD_FULL 的必须技能/经验/学历全部命中，其余因素禁用 -> 权重重分配后应为精确满分
+    total = _run()[0][0]
+    assert total == 100.0
+
+
+def test_strong_resume_outranks_weak_resume():
+    strong = _run()[0][0]
+    weak = _run(resume_text="会一点 Excel 的运营，无学历信息")[0][0]
+    assert strong > weak
 
 
 def test_breakdown_has_all_factors():
