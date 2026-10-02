@@ -11,7 +11,7 @@
 SKILL_TAXONOMY: dict[str, list[str]] = {
     "Python": ["python", "python3"],
     "Java": ["java"],
-    "Go": ["golang", " go 语言"],
+    "Go": ["golang", "go语言", "go 语言"],
     "C++": ["c++"],
     "C#": ["c#", "c sharp"],
     "JavaScript": ["javascript", "js"],
