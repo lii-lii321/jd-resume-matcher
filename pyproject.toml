@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jd-resume-matcher"
+version = "0.1.0"
+description = "JD↔简历结构化匹配与解释器：离线规则抽取 + 多因素加权打分，理由可追溯证据片段"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "lii-lii321" }]
+requires-python = ">=3.10"
+# 库语义的兼容范围；可复现安装请用钉死版本的 requirements.txt（见文件头说明）
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "pydantic>=2.6,<3",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+jd-resume-matcher = "cli:main"
+
+[tool.setuptools]
+packages = ["matcher"]
