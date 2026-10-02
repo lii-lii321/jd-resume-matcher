@@ -107,9 +107,10 @@ def _education_score(jd: ParsedProfile, resume: ParsedProfile) -> tuple[float | 
         )]
     gap = need - got
     score = EDUCATION_ONE_LEVEL_BELOW if gap == 1 else EDUCATION_TWO_OR_MORE_BELOW
-    note = "一级，可被经验部分补偿" if gap == 1 else "两级及以上"
+    note = "一级" if gap == 1 else "两级及以上"
     return score, [Reason(
-        detail=f"简历学历（{resume.education.level}）低于 JD 要求（{jd.education.level}）{note}",
+        detail=f"简历学历（{resume.education.level}）低于 JD 要求（{jd.education.level}）{note}，"
+               f"按固定档位计 {score:g} 分（无经验补偿机制）",
         evidence=jd.education.evidence + resume.education.evidence,
     )]
 
@@ -161,8 +162,9 @@ def compute_match(
     semantic_scorer: SemanticScorer | None = None,
 ) -> tuple[float, str, str, list[FactorScore], list[str]]:
     """计算总分、等级、逐因素得分。返回 (total, grade, grade_label, breakdown, missing_required)。"""
+    req_score, req_reasons, missing_required = _required_skills_score(jd, resume)
     raw_scores: dict[str, tuple[float | None, list[Reason]]] = {
-        "required_skills": _required_skills_score(jd, resume)[:2],
+        "required_skills": (req_score, req_reasons),
         "preferred_skills": _preferred_skills_score(jd, resume),
         "experience": _experience_score(jd, resume),
         "education": _education_score(jd, resume),
@@ -175,7 +177,6 @@ def compute_match(
 
     breakdown: list[FactorScore] = []
     total = 0.0
-    missing: list[str] = []
     for factor, (score, reasons) in raw_scores.items():
         base_w = FACTOR_WEIGHTS[factor]
         if score is None:
@@ -191,10 +192,8 @@ def compute_match(
             factor=factor, base_weight=base_w, effective_weight=round(eff_w, 4),
             score=round(score, 1), reasons=reasons,
         ))
-        if factor == "required_skills":
-            missing = _required_skills_score(jd, resume)[2]
 
     for grade_floor, grade, label in GRADE_THRESHOLDS:
         if total >= grade_floor:
-            return round(total, 1), grade, label, breakdown, missing
-    return round(total, 1), "D", "不匹配", breakdown, missing  # pragma: no cover（阈值兜底）
+            return round(total, 1), grade, label, breakdown, missing_required
+    return round(total, 1), "D", "不匹配", breakdown, missing_required  # pragma: no cover（阈值兜底）

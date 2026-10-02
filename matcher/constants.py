@@ -35,7 +35,8 @@ GRADE_THRESHOLDS: Final[list[tuple[float, str, str]]] = [
 # 经验打分：每缺 1 年扣的分；缺得越多失分越快（线性、有下限 0）
 EXPERIENCE_PENALTY_PER_YEAR: Final[float] = 25.0
 
-# 学历打分：低于要求 1 级 / 2 级及以上的分数（不完全清零：学历可被经验部分补偿）
+# 学历打分：低于要求 1 级 / 2 级及以上的固定档位分
+# （不完全清零，给低学历留容忍度；经验对学历没有补偿机制，档位即最终得分）
 EDUCATION_ONE_LEVEL_BELOW: Final[float] = 55.0
 EDUCATION_TWO_OR_MORE_BELOW: Final[float] = 20.0
 EDUCATION_UNKNOWN_RESUME: Final[float] = 25.0  # 简历未写学历：无法核实，给低分但不判死
