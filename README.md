@@ -10,7 +10,7 @@ JD↔简历结构化匹配与解释器：纯离线规则抽取 + 多因素加权
 - **解析**：规则 + 关键词抽取技能（40+ 规范名，含别名归一）、学历阶梯、工作年限、领域标签，**不依赖 LLM，离线可跑、结果确定**
 - **打分**：六因素加权 `total_score` + `score_breakdown` + 逐条 `reasons`，权重集中在 `matcher/constants.py` 并逐条注明设计依据
 - **语义路**：嵌入 provider 可插拔 —— `mock`（确定性字符 3-gram 哈希，默认）与 `openai_compatible`（可选）；无 API Key / URL 非法 / 调用失败时**三级优雅降级**到纯规则
-- **交付**：FastAPI `/match` 端点 + CLI 演示命令 + 59 个 pytest 全绿
+- **交付**：FastAPI `/match` 端点 + CLI 演示命令 + 62 个 pytest 全绿
 
 ## 架构
 
@@ -95,7 +95,8 @@ provider 不可用时自动降级并在 `degraded_note` 里说明原因，打分
 
 本机（Windows 10，Python 3.10.9）实测，以下数字均为真实运行结果：
 
-- **测试**：`python -m pytest -q` → `59 passed in 0.75s`
+- **测试**：`python -m pytest -q` → `62 passed in 1.54s`
+- **依赖**：`requirements.txt` 钉死本机实测通过的精确版本（CI 可复现）；`pyproject.toml` 提供库语义的版本范围
 - **示例匹配**（`examples/` 四组真实运行）：
 
 | JD | 简历 | 总分 | 等级 |
@@ -122,7 +123,8 @@ jd-resume-matcher/
 │   └── main.py         # FastAPI 入口
 ├── cli.py              # CLI 演示命令
 ├── examples/           # 示例 JD 与简历
-├── tests/              # 59 个测试
+├── tests/              # 62 个测试
+├── pyproject.toml      # 包元数据与依赖范围（精确锁定见 requirements.txt）
 └── .github/workflows/ci.yml
 ```
 
