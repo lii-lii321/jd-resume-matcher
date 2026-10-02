@@ -93,14 +93,17 @@ def parse_education(text: str, source: Literal["jd", "resume"]) -> EducationInfo
 
 
 def _cn_numeral_to_float(num: str) -> float | None:
+    """阿拉伯数字直转；中文数字支持 1-99：X / 十 / 十X / X十 / X十Y。"""
     if num.replace(".", "").isdigit():
         return float(num)
-    if num in _CN_NUMERALS:
-        return float(_CN_NUMERALS[num])
-    if num == "十" or num.endswith("十"):  # 简单支持"十/二十"
-        tens = _CN_NUMERALS.get(num[0], 1) if len(num) > 1 else 1
-        return float(tens * 10 + (_CN_NUMERALS.get(num[-1], 0) if len(num) > 1 else 0))
-    return None
+    if "十" in num:
+        left, _, right = num.partition("十")
+        if (left and left not in _CN_NUMERALS) or (right and right not in _CN_NUMERALS):
+            return None
+        tens = _CN_NUMERALS.get(left, 1) if left else 1  # "十X" 隐含一十
+        ones = _CN_NUMERALS.get(right, 0) if right else 0
+        return float(tens * 10 + ones)
+    return float(_CN_NUMERALS[num]) if num in _CN_NUMERALS else None
 
 
 def parse_experience(text: str, source: Literal["jd", "resume"]) -> ExperienceInfo:
