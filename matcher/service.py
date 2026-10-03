@@ -14,10 +14,15 @@ def match_jd_resume(
     base_url: str | None = None,
     model: str | None = None,
     include_profiles: bool = True,
+    skill_taxonomy: dict[str, list[str]] | None = None,
 ) -> MatchResult:
-    """JD↔简历匹配主入口。openai_compatible 缺 key/URL 非法时自动降级，调用中失败时再降级为纯规则。"""
-    jd = parse_profile(jd_text, "jd")
-    resume = parse_profile(resume_text, "resume")
+    """JD↔简历匹配主入口。openai_compatible 缺 key/URL 非法时自动降级，调用中失败时再降级为纯规则。
+
+    skill_taxonomy 为 None 时用内置技能词表；传入自定义词表（如
+    taxonomy.load_vocab(extra) 的合并结果）时双侧解析均按其匹配。
+    """
+    jd = parse_profile(jd_text, "jd", skill_taxonomy)
+    resume = parse_profile(resume_text, "resume", skill_taxonomy)
 
     provider = None
     degraded_note = None

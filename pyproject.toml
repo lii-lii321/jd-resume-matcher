@@ -28,3 +28,7 @@ jd-resume-matcher = "cli:main"
 
 [tool.setuptools]
 packages = ["matcher"]
+
+# 技能词表数据文件随包分发（taxonomy.load_vocab 经 importlib.resources 读取）
+[tool.setuptools.package-data]
+matcher = ["data/*.json"]

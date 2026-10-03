@@ -27,6 +27,14 @@ _SKILL_ALIAS_MAP = flatten_alias_map(SKILL_TAXONOMY)
 # 长别名优先，避免短别名抢占长别名的匹配区间
 _SKILL_ALIASES_SORTED = sorted(_SKILL_ALIAS_MAP, key=len, reverse=True)
 
+
+def _skill_alias_maps(skill_taxonomy: dict[str, list[str]] | None) -> tuple[dict[str, str], list[str]]:
+    """自定义词表 -> 展平别名映射；None 用模块级默认（内置词表），零开销走老路。"""
+    if skill_taxonomy is None:
+        return _SKILL_ALIAS_MAP, _SKILL_ALIASES_SORTED
+    alias_map = flatten_alias_map(skill_taxonomy)
+    return alias_map, sorted(alias_map, key=len, reverse=True)
+
 _MAJOR_PATTERN = re.compile(r"([\u4e00-\u9fa5A-Za-z][\u4e00-\u9fa5A-Za-z ]{1,12}?)(?:专业)")
 _MAJOR_RELATED_PATTERN = re.compile(r"([\u4e00-\u9fa5A-Za-z]{2,10})(?:相关专业)")
 
@@ -47,13 +55,22 @@ def _find_spans(text: str, alias: str) -> list[tuple[int, int]]:
     return [(m.start(), m.end()) for m in re.finditer(pattern, text, re.IGNORECASE)]
 
 
-def parse_skills(text: str, source: Literal["jd", "resume"]) -> list[SkillHit]:
-    """抽取技能：按规范名去重；同一技能的多种写法都并入证据（每技能最多 3 条）。"""
+def parse_skills(
+    text: str,
+    source: Literal["jd", "resume"],
+    skill_taxonomy: dict[str, list[str]] | None = None,
+) -> list[SkillHit]:
+    """抽取技能：按规范名去重；同一技能的多种写法都并入证据（每技能最多 3 条）。
+
+    skill_taxonomy 为 None 时用内置词表（matcher/data/vocab.json）；
+    传入自定义词表（如 taxonomy.load_vocab 的合并结果）时按其别名匹配。
+    """
+    alias_map, aliases_sorted = _skill_alias_maps(skill_taxonomy)
     hits: dict[str, SkillHit] = {}
     claimed: list[tuple[int, int]] = []
 
-    for alias in _SKILL_ALIASES_SORTED:
-        canonical = _SKILL_ALIAS_MAP[alias]
+    for alias in aliases_sorted:
+        canonical = alias_map[alias]
         spans = [s for s in _find_spans(text, alias) if not any(s[0] < c[1] and c[0] < s[1] for c in claimed)]
         if not spans:
             continue
@@ -151,18 +168,23 @@ def parse_domains(text: str, source: Literal["jd", "resume"]) -> DomainInfo:
     )
 
 
-def parse_profile(text: str, source: Literal["jd", "resume"]) -> ParsedProfile:
+def parse_profile(
+    text: str,
+    source: Literal["jd", "resume"],
+    skill_taxonomy: dict[str, list[str]] | None = None,
+) -> ParsedProfile:
     """把一侧文本解析为结构化画像。JD 侧按加分项分节标记拆分必须/加分技能。"""
     if source == "jd":
         m = _PREFERRED_SECTION_MARK.search(text)
         if m:
             required_part, preferred_part = text[: m.start()], text[m.start():]
-            required_hits = parse_skills(required_part, source)
-            preferred_raw = parse_skills(preferred_part, source)
+            required_hits = parse_skills(required_part, source, skill_taxonomy)
+            preferred_raw = parse_skills(preferred_part, source, skill_taxonomy)
             required_names = {h.name for h in required_hits}
             preferred_hits = [h for h in preferred_raw if h.name not in required_names]
         else:
-            required_hits, preferred_hits = parse_skills(text, source), []
+            required_hits = parse_skills(text, source, skill_taxonomy)
+            preferred_hits = []
         return ParsedProfile(
             skills=required_hits,
             preferred_skills=preferred_hits,
@@ -172,7 +194,7 @@ def parse_profile(text: str, source: Literal["jd", "resume"]) -> ParsedProfile:
         )
 
     return ParsedProfile(
-        skills=parse_skills(text, source),
+        skills=parse_skills(text, source, skill_taxonomy),
         education=parse_education(text, source),
         experience=parse_experience(text, source),
         domains=parse_domains(text, source),

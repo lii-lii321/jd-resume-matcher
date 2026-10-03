@@ -2,61 +2,16 @@
 
 设计说明：
 - 全部为静态规则词表，离线可用、确定性可测；
+- 技能词表外置为包内数据文件 matcher/data/vocab.json（带 schema_version 与
+  description 字段），模块导入时经 importlib.resources 加载，装包后同样可用；
 - 别名统一映射到规范名（canonical），如 mysql -> SQL、k8s -> Kubernetes；
 - 纯 ASCII 别名按整词边界匹配（避免 "sql" 误命中 "mysql" 的反面情况由别名显式覆盖），
   含中文的别名按子串匹配（Python re 的 \\b 对中文无效）。
 """
 
-# 技能词表：规范名 -> 别名列表（第一个别名视为主写法）
-SKILL_TAXONOMY: dict[str, list[str]] = {
-    "Python": ["python", "python3"],
-    "Java": ["java"],
-    "Go": ["golang", "go语言", "go 语言"],
-    "C++": ["c++"],
-    "C#": ["c#", "c sharp"],
-    "JavaScript": ["javascript", "js"],
-    "TypeScript": ["typescript", "ts"],
-    "React": ["react", "reactjs"],
-    "Vue": ["vue", "vuejs"],
-    "Node.js": ["node.js", "nodejs", "node"],
-    "FastAPI": ["fastapi"],
-    "Django": ["django"],
-    "Flask": ["flask"],
-    "Spring": ["spring", "spring boot", "springboot"],
-    "SQL": ["sql", "mysql", "postgresql", "postgres", "sqlite", "oracle", "sqlserver"],
-    "Redis": ["redis"],
-    "MongoDB": ["mongodb", "mongo"],
-    "Docker": ["docker", "容器化"],
-    "Kubernetes": ["kubernetes", "k8s"],
-    "Linux": ["linux"],
-    "Git": ["git", "版本管理"],
-    "PyTorch": ["pytorch", "torch"],
-    "TensorFlow": ["tensorflow", "tf"],
-    "机器学习": ["机器学习", "machine learning", "ml"],
-    "深度学习": ["深度学习", "deep learning"],
-    "NLP": ["自然语言处理", "nlp"],
-    "数据分析": ["数据分析", "data analysis"],
-    "pandas": ["pandas"],
-    "NumPy": ["numpy"],
-    "Spark": ["spark", "pyspark"],
-    "Hadoop": ["hadoop"],
-    "Kafka": ["kafka"],
-    "RabbitMQ": ["rabbitmq", "rabbit mq"],
-    "Tableau": ["tableau"],
-    "Power BI": ["power bi", "powerbi"],
-    "Excel": ["excel"],
-    "AWS": ["aws", "亚马逊云"],
-    "Azure": ["azure"],
-    "GCP": ["gcp", "google cloud"],
-    "微服务": ["微服务", "microservice"],
-    "RESTful API": ["restful", "rest api", "api 设计"],
-    "CI/CD": ["ci/cd", "cicd", "持续集成"],
-    "自动化测试": ["自动化测试", "单元测试", "pytest", "unittest"],
-    "爬虫": ["爬虫", "spider", "scrapy"],
-    "大数据": ["大数据", "big data", "数据仓库", "数仓"],
-    "推荐系统": ["推荐系统", "recommendation system"],
-    "计算机视觉": ["计算机视觉", "cv", "图像识别"],
-}
+import json
+from importlib.resources import files
+from pathlib import Path
 
 # 学历阶梯：rank 越高学历越高；"研究生" 归入硕士（常见口语默认，见 README 已知限制）
 EDUCATION_LEVELS: list[dict] = [
@@ -84,6 +39,59 @@ DOMAIN_TAXONOMY: dict[str, list[str]] = {
     "政务": ["政务", "government", "公共部门"],
     "教育科技": ["edtech"],
 }
+
+
+def _parse_vocab_document(raw: str, origin: str) -> dict[str, list[str]]:
+    """解析词表 JSON 文本并校验结构，返回 规范名 -> 别名列表。
+
+    要求顶层对象含 "skills" 字段（规范名 -> 非空别名列表）；schema_version /
+    description 为注释性字段，加载时不校验其取值。结构非法抛 ValueError。
+    """
+    try:
+        doc = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{origin} 不是合法 JSON：{exc}") from exc
+    if not isinstance(doc, dict):
+        raise ValueError(f"{origin} 顶层必须是 JSON 对象")
+    skills = doc.get("skills")
+    if not isinstance(skills, dict):
+        raise ValueError(f"{origin} 缺少 \"skills\" 字段（应为 规范名 -> 别名列表 的对象）")
+
+    taxonomy: dict[str, list[str]] = {}
+    for canonical, aliases in skills.items():
+        if not isinstance(canonical, str) or not canonical.strip():
+            raise ValueError(f"{origin} 存在空的技能规范名")
+        if not isinstance(aliases, list) or not aliases \
+                or not all(isinstance(a, str) and a.strip() for a in aliases):
+            raise ValueError(f"{origin} 中技能「{canonical}」的别名必须是非空字符串列表")
+        taxonomy[canonical.strip()] = [a.strip() for a in aliases]
+    return taxonomy
+
+
+def _load_bundled_vocab() -> dict[str, list[str]]:
+    """读取包内词表 matcher/data/vocab.json（importlib.resources，装包后同样可用）。"""
+    raw = files("matcher").joinpath("data").joinpath("vocab.json").read_text(encoding="utf-8")
+    return _parse_vocab_document(raw, origin="内置词表 matcher/data/vocab.json")
+
+
+def load_vocab(extra_path: str | Path | None = None) -> dict[str, list[str]]:
+    """加载技能词表：默认内置 vocab.json；传入用户 JSON 时按键合并。
+
+    合并语义：用户文件与内置词表按规范名（canonical）合并，同名条目由用户
+    整体覆盖（别名列表不拼接），新规范名直接追加，其余内置条目原样保留。
+    文件不存在 / JSON 非法 / 结构不符抛 OSError 或 ValueError。
+    """
+    taxonomy = _load_bundled_vocab()
+    if extra_path is not None:
+        path = Path(extra_path)
+        raw = path.read_text(encoding="utf-8")
+        user = _parse_vocab_document(raw, origin=f"用户词表 {path}")
+        taxonomy = {**taxonomy, **user}
+    return taxonomy
+
+
+# 技能词表：规范名 -> 别名列表（第一个别名视为主写法）；内容源为 matcher/data/vocab.json
+SKILL_TAXONOMY: dict[str, list[str]] = _load_bundled_vocab()
 
 
 def flatten_alias_map(taxonomy: dict[str, list[str]]) -> dict[str, str]:

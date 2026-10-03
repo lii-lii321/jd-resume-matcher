@@ -9,6 +9,7 @@
                                                    # 按总分降序输出候选名单；
                                                    # 配 --min-score 时无人达标退出码 1
   python cli.py jd.txt --resume-dir resumes/ --csv out.csv   # 批量结果导出 CSV（utf-8-sig）
+  python cli.py jd.txt resume.txt --vocab my_vocab.json      # 叠加自定义技能词表（用户条目优先）
 """
 
 import argparse
@@ -19,6 +20,7 @@ from pathlib import Path
 from matcher.batch import match_directory
 from matcher.export import write_batch_csv
 from matcher.service import match_jd_resume
+from matcher.taxonomy import load_vocab
 
 _DEMO_JD = """# 招聘：后端开发工程师（Python）
 
@@ -116,9 +118,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--provider", choices=["mock", "openai_compatible"], default="mock")
     parser.add_argument("--base-url", default=None, help="openai_compatible 的 /v1 根地址")
     parser.add_argument("--model", default=None, help="嵌入模型名")
+    parser.add_argument("--vocab", default=None, metavar="路径",
+                        help="自定义技能词表 JSON（与内置词表按规范名合并，用户条目优先；格式见 README 自定义词表）")
     parser.add_argument("--json", action="store_true", help="输出 JSON")
     parser.add_argument("--min-score", type=float, default=None, help="低于该分退出码为 1（批量模式：无人达标退出码 1）")
     args = parser.parse_args(argv)
+
+    skill_taxonomy = None
+    if args.vocab:
+        try:
+            skill_taxonomy = load_vocab(args.vocab)
+        except (OSError, ValueError) as exc:
+            parser.error(f"自定义词表加载失败：{exc}")
 
     if args.csv and not args.resume_dir:
         parser.error("--csv 仅支持批量模式（配合 --resume-dir 使用）")
@@ -129,6 +140,7 @@ def main(argv: list[str] | None = None) -> int:
         base_url=args.base_url,
         model=args.model,
         include_profiles=False,
+        skill_taxonomy=skill_taxonomy,
     )
 
     if args.demo:

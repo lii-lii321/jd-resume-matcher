@@ -9,12 +9,12 @@ JD↔简历结构化匹配与解释器：纯离线规则抽取 + 多因素加权
 ## 功能特性
 
 - **输入**：职位描述 + 简历文本（Markdown / 纯文本均可），或一份 JD 对目录下多份简历
-- **解析**：规则 + 关键词抽取技能（40+ 规范名，含别名归一）、学历阶梯、工作年限、领域标签，**不依赖 LLM，离线可跑、结果确定**
+- **解析**：规则 + 关键词抽取技能（47 规范名，含别名归一；词表外置 `matcher/data/vocab.json`，支持 `--vocab` 叠加自定义条目）、学历阶梯、工作年限、领域标签，**不依赖 LLM，离线可跑、结果确定**
 - **打分**：六因素加权 `total_score` + `score_breakdown` + 逐条 `reasons`，权重集中在 `matcher/constants.py` 并逐条注明设计依据
 - **批量模式**：`--resume-dir` 一份 JD 筛整个简历文件夹，按总分降序输出候选名单；单份文件损坏/为空只记失败不中断整批，`--min-score` 做"无人达标即失败"的流水线闸门，`--csv` 导出 utf-8-sig 候选名单（Excel 友好）
 - **交互 Demo**：`streamlit run streamlit_app.py` 单文件双页签（单份匹配 + 批量筛选），示例数据预填、打开即出完整结果，展示层之外的纯函数可独立测试
 - **语义路**：嵌入 provider 可插拔 —— `mock`（确定性字符 3-gram 哈希，默认）与 `openai_compatible`（可选）；无 API Key / URL 非法 / 调用失败时**三级优雅降级**到纯规则
-- **交付**：FastAPI `/match` 端点 + CLI 演示命令 + Streamlit 交互 Demo + 99 个 pytest 全绿
+- **交付**：FastAPI `/match` 端点 + CLI 演示命令 + Streamlit 交互 Demo + 108 个 pytest 全绿
 
 ## 架构
 
@@ -71,7 +71,7 @@ EOF
 
 响应核心字段：`total_score`（0-100）、`grade`/`grade_label`（A 强烈推荐 / B 推荐 / C 待定 / D 不匹配）、`score_breakdown`（逐因素：基础权重、生效权重、得分、理由）、每条 `reason` 附 `evidence[]`（原文片段 + 字符偏移 + 来自 JD/简历）。
 
-可选命令行参数：`--no-semantic`（纯规则）、`--json`、`--min-score N`（低于阈值退出码 1，可做流水线闸门；批量模式语义为"无人达标退出码 1"）、`--resume-dir 目录`（批量模式，需同时给 JD 文件）、`--provider openai_compatible --base-url ... --model ...`。
+可选命令行参数：`--no-semantic`（纯规则）、`--json`、`--min-score N`（低于阈值退出码 1，可做流水线闸门；批量模式语义为"无人达标退出码 1"）、`--resume-dir 目录`（批量模式，需同时给 JD 文件）、`--vocab 词表.json`（叠加自定义技能词表，见下节）、`--provider openai_compatible --base-url ... --model ...`。
 
 批量模式输出示例（真实运行）：
 
@@ -154,11 +154,35 @@ python cli.py --demo --provider openai_compatible --base-url https://api.openai.
 
 provider 不可用时自动降级并在 `degraded_note` 里说明原因，打分永不因语义路失败而中断。
 
+## 自定义词表
+
+技能词表外置在包内 `matcher/data/vocab.json`（带 `schema_version` 与 `description` 字段，默认 47 条规范名），内置词表不够用时不必改源码——写一份同格式 JSON，用 `--vocab` 叠加：
+
+```json
+{
+  "schema_version": 1,
+  "skills": {
+    "Rust": ["rust", "rustlang"],
+    "Vue": ["vue3", "vue2"]
+  }
+}
+```
+
+```bash
+# 单份 / 批量模式均可叠加
+python cli.py jd.txt resume.txt --vocab my_vocab.json
+python cli.py jd.txt --resume-dir resumes/ --vocab my_vocab.json
+```
+
+合并语义：按规范名（canonical）合并——同名条目由用户**整体覆盖**（别名列表不拼接，上例中 `Vue` 只剩 `vue3`/`vue2` 两个别名），新规范名直接追加，其余内置条目原样保留。纯 ASCII 别名按整词边界匹配，含中文的别名按子串匹配。文件须含 `skills` 字段（规范名 -> 非空别名列表），JSON 非法或结构不符时 CLI 直接报错退出。
+
+真实效果（本机实测）：JD/简历各写一句 "Rust 后端开发经验"，默认词表不认识 Rust，总分 33.3（D 不匹配）；加 `--vocab` 收录 Rust 后同一对文本总分 100.0（A 强烈推荐）。
+
 ## 真实指标
 
 本机（Windows 10，Python 3.10.9）实测，以下数字均为真实运行结果：
 
-- **测试**：`python -m pytest -q` → `99 passed in 8.35s`
+- **测试**：`python -m pytest -q` → `108 passed in 7.16s`
 - **依赖**：`requirements.txt` 钉死本机实测通过的精确版本（CI 可复现，含 Streamlit Demo 依赖）；`pyproject.toml` 提供库语义的版本范围
 - **示例匹配**（`examples/` 真实运行）：
 
@@ -179,7 +203,9 @@ provider 不可用时自动降级并在 `degraded_note` 里说明原因，打分
 jd-resume-matcher/
 ├── matcher/
 │   ├── constants.py    # 权重与阈值（含设计依据）
-│   ├── taxonomy.py     # 技能/学历/领域词表
+│   ├── data/
+│   │   └── vocab.json  # 技能词表（schema_version + description + skills，--vocab 叠加的基底）
+│   ├── taxonomy.py     # 词表加载/校验/合并（load_vocab）与学历、领域词表
 │   ├── models.py       # Pydantic 模型（Evidence 是可解释性最小单元）
 │   ├── parser.py       # 规则解析器
 │   ├── scoring.py      # 加权打分器
@@ -191,7 +217,7 @@ jd-resume-matcher/
 ├── cli.py              # CLI 演示命令（单对 + 批量模式）
 ├── streamlit_app.py    # Streamlit 交互 Demo（单份匹配 + 批量筛选，纯函数核心 + 薄壳渲染）
 ├── examples/           # 示例 JD、简历与批量目录 batch_resumes/
-├── tests/              # 99 个测试
+├── tests/              # 108 个测试
 ├── pyproject.toml      # 包元数据与依赖范围（精确锁定见 requirements.txt）
 └── .github/workflows/ci.yml
 ```
@@ -200,7 +226,7 @@ jd-resume-matcher/
 
 诚实清单，按影响排序：
 
-1. **词表覆盖有限**：未收录的技能/别名（尤其新兴框架）识别不出；无分词器，复杂中文句式可能漏抽。
+1. **词表已外置可叠加，覆盖仍有限**：默认词表 47 条规范名（`matcher/data/vocab.json`），CLI `--vocab` 可叠加用户条目，但未收录的技能/别名（尤其新兴框架）默认仍识别不出；无分词器，复杂中文句式可能漏抽。
 2. **必须/加分区分依赖分节标记**：JD 需含"加分项/优先"等标记才会拆分加分技能；无标记的 JD 全部技能按必须项计分，可能低估候选人。
 3. **mock 语义无真正泛化**：字符 3-gram 哈希只反映字面重叠，同义改写识别不了；`SEMANTIC_COSINE_CEILING=0.85` 是经验校准值。
 4. **出网安全限制是双向的**：SSRF 防护拒绝内网/保留地址，因此 provider 无法指向本机 ollama 等私有端点；DNS 解析后复核存在 TOCTOU 窗口，重绑定攻击不在防护范围。
