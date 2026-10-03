@@ -17,9 +17,24 @@ _YEAR_CANDIDATE = re.compile(
     r"(?P<num>\d+(?:\.\d+)?|[一二两三四五六七八九十]+)\s*(?:年|years?|yrs?)",
     re.IGNORECASE,
 )
-# 合理年限范围：超出视为年份（如"2020年"）误报并丢弃
-_YEAR_MIN, _YEAR_MAX = 0.5, 50.0
+# 合理年限范围：超出视为年份（如"2020年"）误报并丢弃；下界 0 容纳"应届"记 0 年
+_YEAR_MIN, _YEAR_MAX = 0.0, 50.0
 _YEAR_CONTEXT_WINDOW = 12  # 年限数字与语境关键词的最大字符距离
+
+# 中文口语/月份/区间/应届表述：正则先行，命中即解析；未命中走 _YEAR_CANDIDATE 原逻辑
+_NUM_AND_HALF = re.compile(r"(?P<num>\d+(?:\.\d+)?|[一二两三四五六七八九十]+)\s*年半")
+_HALF_YEAR = re.compile(r"半年")
+# 只认"N个月"（带"个"），规避"2024年6月""去年3月入职"等日期写法误报为时长
+_MONTHS = re.compile(r"(?P<num>\d+(?:\.\d+)?|[一二两三四五六七八九十]+)\s*个\s*月")
+_FRESH_GRAD = re.compile(r"应届生?|无(?:工作)?经验")
+_YEAR_RANGE = re.compile(
+    r"(?P<lo>\d+(?:\.\d+)?)\s*[-－—–~～到至]\s*(?P<hi>\d+(?:\.\d+)?)\s*(?:年|years?|yrs?)",
+    re.IGNORECASE,
+)
+# "上/下半年"指时间段而非工作年限
+_HALF_BANNED_PREFIX = "上下前这"
+# "2024年6月"里的"N月"是日期而非时长
+_DATE_YEAR_PREFIX = re.compile(r"\d{4}年?$")
 
 _CN_NUMERALS = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
 
@@ -123,17 +138,59 @@ def _cn_numeral_to_float(num: str) -> float | None:
     return float(_CN_NUMERALS[num]) if num in _CN_NUMERALS else None
 
 
-def parse_experience(text: str, source: Literal["jd", "resume"]) -> ExperienceInfo:
-    """抽取工作年限：优先取语境关键词（经验/工作/experience）附近的候选，均无则回退最大候选。
+def _extended_year_candidates(text: str) -> list[tuple[float, int, int]]:
+    """中文口语/月份/区间/应届候选：返回 (年值, 起偏移, 止偏移)，与原逻辑同构。"""
+    candidates: list[tuple[float, int, int]] = []
 
-    超出 [0.5, 50] 区间的数字（如"2020年"的年份用法）直接丢弃，避免误报。
+    def keep(value: float, start: int, end: int) -> None:
+        if _YEAR_MIN <= value <= _YEAR_MAX:
+            candidates.append((value, start, end))
+
+    for m in _FRESH_GRAD.finditer(text):
+        keep(0.0, m.start(), m.end())
+    for m in _YEAR_RANGE.finditer(text):
+        value = float(m.group("lo"))  # 区间取下界，口径保守
+        if value <= _YEAR_MAX:  # "2020-2024年"这类年份区间整组丢弃
+            keep(value, m.start(), m.end())
+    for m in _NUM_AND_HALF.finditer(text):
+        value = _cn_numeral_to_float(m.group("num"))
+        if value is not None:
+            keep(value + 0.5, m.start(), m.end())
+    for m in _HALF_YEAR.finditer(text):
+        start = m.start()
+        if start > 0 and text[start - 1] in _HALF_BANNED_PREFIX:
+            continue  # "上/下半年"
+        keep(0.5, start, m.end())
+    for m in _MONTHS.finditer(text):
+        start = m.start()
+        if _DATE_YEAR_PREFIX.search(text[max(0, start - 5): start]):
+            continue  # "2024年12个月"式的日期粘连
+        value = _cn_numeral_to_float(m.group("num"))
+        if value is None:
+            continue
+        window = text[max(0, start - _YEAR_CONTEXT_WINDOW): m.end() + _YEAR_CONTEXT_WINDOW]
+        if _YEAR_CONTEXT_KEYWORDS.search(window):  # 月份必须是时长语境，进一步防日期误报
+            keep(round(value / 12, 4), start, m.end())
+    return candidates
+
+
+def parse_experience(text: str, source: Literal["jd", "resume"]) -> ExperienceInfo:
+    """抽取工作年限：中文口语/月份/区间/应届表述（两年半、应届、半年、N个月、2-4年）
+    正则先行，命中即解析；未命中走数字/中文数字 + 年 的原逻辑，调用方无感。
+
+    多候选时优先取语境关键词（经验/工作/experience）附近者，再取最大值。
+    超出 [0, 50] 区间的候选（如"2020年"的年份用法、"80年"）直接丢弃，避免误报。
     """
+    extended = _extended_year_candidates(text)
     candidates: list[tuple[float, int, int]] = []
     for m in _YEAR_CANDIDATE.finditer(text):
+        if any(m.start() < e[2] and e[1] < m.end() for e in extended):
+            continue  # 已被扩展模式覆盖（如"两年半"不再拆成"两年"）
         value = _cn_numeral_to_float(m.group("num"))
         if value is None or not (_YEAR_MIN <= value <= _YEAR_MAX):
             continue
         candidates.append((value, m.start(), m.end()))
+    candidates.extend(extended)
     if not candidates:
         return ExperienceInfo()
 

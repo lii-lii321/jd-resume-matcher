@@ -91,6 +91,65 @@ def test_years_missing_returns_none():
     assert info.years is None and info.evidence == []
 
 
+def test_years_chinese_numeral_half():
+    # 中文数字 + 年半："两年半"不再被拆成"两年"
+    assert parse_experience("两年半 Python 开发经验", "resume").years == 2.5
+    assert parse_experience("一年半工作经验", "resume").years == 1.5
+    info = parse_experience("两年半 Python 开发经验", "resume")
+    assert info.evidence[0].text == "两年半"
+
+
+def test_years_chinese_at_least_takes_lower_bound():
+    assert parse_experience("五年以上工作经验", "resume").years == 5.0
+
+
+def test_years_fresh_grad_zero():
+    assert parse_experience("应届", "resume").years == 0.0
+    assert parse_experience("应届毕业生，熟悉 Python", "resume").years == 0.0
+    assert parse_experience("无经验", "resume").years == 0.0
+
+
+def test_years_half_year_and_months():
+    assert parse_experience("工作半年", "resume").years == 0.5
+    assert parse_experience("半年 Python 项目经验", "resume").years == 0.5
+    assert parse_experience("6个月实习经验", "resume").years == 0.5
+    assert parse_experience("三个月项目经验", "resume").years == 0.25
+
+
+def test_years_month_date_not_misread_as_duration():
+    # 日期写法不误报为时长
+    assert parse_experience("2024年6月毕业", "resume").years is None
+    assert parse_experience("2023年下半年入职", "resume").years is None
+
+
+def test_years_arabic_range_takes_lower_bound():
+    assert parse_experience("2-4年经验", "resume").years == 2.0
+    assert parse_experience("2到4年经验", "resume").years == 2.0
+    info = parse_experience("3～5年 Python 经验", "resume")
+    assert info.years == 3.0 and info.evidence[0].text == "3～5年"
+
+
+def test_years_arabic_regression_unchanged():
+    # 旧逻辑回归：阿拉伯数字 + 年 行为不变
+    assert parse_experience("3年经验", "resume").years == 3.0
+    assert parse_experience("2020年毕业", "resume").years is None
+    assert parse_experience("2020-2024年 就读", "resume").years is None
+
+
+def test_years_clamp_out_of_range_discarded():
+    assert parse_experience("80年工作经验", "resume").years is None
+
+
+def test_years_end_to_end_resume_text():
+    text = (
+        "张三\n本科，计算机科学与技术专业\n"
+        "工作经历：某科技公司后端开发工程师，两年半 Python 经验，负责订单系统。"
+    )
+    profile = parse_profile(text, "resume")
+    assert profile.experience.years == 2.5
+    assert profile.experience.evidence[0].text == "两年半"
+
+
 def test_domains_extraction():
     info = parse_domains("有金融、电商领域经验", "resume")
     assert {"金融", "电商"} <= set(info.domains)
