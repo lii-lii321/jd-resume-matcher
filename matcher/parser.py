@@ -117,7 +117,9 @@ def parse_education(text: str, source: Literal["jd", "resume"]) -> EducationInfo
     if m:
         major = m.group(1).strip()
     return EducationInfo(
-        level=None if best_rank is None else next(l["name"] for l in EDUCATION_LEVELS if l["rank"] == best_rank),
+        level=None if best_rank is None else next(
+            lv["name"] for lv in EDUCATION_LEVELS if lv["rank"] == best_rank
+        ),
         rank=best_rank,
         major=major,
         evidence=best_evidence,

@@ -122,8 +122,8 @@ def _domain_score(jd: ParsedProfile, resume: ParsedProfile) -> tuple[float | Non
     """
     if not jd.domains.domains:
         return None, []
-    jd_ev = dict(zip(jd.domains.domains, jd.domains.evidence))
-    resume_ev = dict(zip(resume.domains.domains, resume.domains.evidence))
+    jd_ev = dict(zip(jd.domains.domains, jd.domains.evidence, strict=False))
+    resume_ev = dict(zip(resume.domains.domains, resume.domains.evidence, strict=False))
     overlap = sorted(set(jd.domains.domains) & set(resume.domains.domains))
     score = len(overlap) / len(jd.domains.domains) * 100.0
 

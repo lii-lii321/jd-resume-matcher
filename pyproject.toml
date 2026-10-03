@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "ruff>=0.4"]
 # 交互 Demo（streamlit_app.py）；水平条形图需 streamlit >= 1.44
 demo = ["streamlit>=1.44"]
 
@@ -32,3 +32,18 @@ packages = ["matcher"]
 # 技能词表数据文件随包分发（taxonomy.load_vocab 经 importlib.resources 读取）
 [tool.setuptools.package-data]
 matcher = ["data/*.json"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["examples", "build", "jd_resume_matcher.egg-info"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# streamlit_app.py 需先做 sys.path 引导（保证 `streamlit run` 任意 cwd 可 import matcher），import 后置是刻意的
+"streamlit_app.py" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

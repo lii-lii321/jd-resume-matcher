@@ -121,7 +121,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--vocab", default=None, metavar="路径",
                         help="自定义技能词表 JSON（与内置词表按规范名合并，用户条目优先；格式见 README 自定义词表）")
     parser.add_argument("--json", action="store_true", help="输出 JSON")
-    parser.add_argument("--min-score", type=float, default=None, help="低于该分退出码为 1（批量模式：无人达标退出码 1）")
+    parser.add_argument(
+        "--min-score", type=float, default=None,
+        help="低于该分退出码为 1（批量模式：无人达标退出码 1）",
+    )
     args = parser.parse_args(argv)
 
     skill_taxonomy = None
@@ -186,8 +189,11 @@ def main(argv: list[str] | None = None) -> int:
 
         # 批量闸门语义：无人达标（或全员失败）视为未通过，退出码 1
         if args.min_score is not None and not batch.passed(args.min_score):
-            print(f"无人达到阈值 {args.min_score}（最高 {batch.entries[0].result.total_score if batch.matched else '无'}）",
-                  file=sys.stderr)
+            print(
+                f"无人达到阈值 {args.min_score}"
+                f"（最高 {batch.entries[0].result.total_score if batch.matched else '无'}）",
+                file=sys.stderr,
+            )
             return 1
         return 0
 

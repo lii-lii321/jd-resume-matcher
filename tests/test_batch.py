@@ -5,7 +5,10 @@ import pytest
 from matcher import batch as batch_mod
 from matcher.batch import match_directory
 
-_JD = """任职要求：本科及以上学历，3年以上 Python 后端开发经验，熟练使用 FastAPI、MySQL、Redis；熟悉 Docker。加分项：熟悉 Kafka。"""
+_JD = (
+    "任职要求：本科及以上学历，3年以上 Python 后端开发经验，"
+    "熟练使用 FastAPI、MySQL、Redis；熟悉 Docker。加分项：熟悉 Kafka。"
+)
 
 _RESUME_STRONG = """# 强简历
 计算机专业硕士，5年 Python 后端经验。

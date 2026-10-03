@@ -14,7 +14,7 @@ JD↔简历结构化匹配与解释器：纯离线规则抽取 + 多因素加权
 - **批量模式**：`--resume-dir` 一份 JD 筛整个简历文件夹，按总分降序输出候选名单；单份文件损坏/为空只记失败不中断整批，`--min-score` 做"无人达标即失败"的流水线闸门，`--csv` 导出 utf-8-sig 候选名单（Excel 友好）
 - **交互 Demo**：`streamlit run streamlit_app.py` 单文件双页签（单份匹配 + 批量筛选），示例数据预填、打开即出完整结果，展示层之外的纯函数可独立测试
 - **语义路**：嵌入 provider 可插拔 —— `mock`（确定性字符 3-gram 哈希，默认）与 `openai_compatible`（可选）；无 API Key / URL 非法 / 调用失败时**三级优雅降级**到纯规则
-- **交付**：FastAPI `/match` 端点 + CLI 演示命令 + Streamlit 交互 Demo + 108 个 pytest 全绿
+- **交付**：FastAPI `/match` 端点 + CLI 演示命令 + Streamlit 交互 Demo + 117 个 pytest 全绿 + ruff 静态检查门禁
 
 ## 架构
 
@@ -182,7 +182,8 @@ python cli.py jd.txt --resume-dir resumes/ --vocab my_vocab.json
 
 本机（Windows 10，Python 3.10.9）实测，以下数字均为真实运行结果：
 
-- **测试**：`python -m pytest -q` → `108 passed in 7.16s`
+- **测试**：`python -m pytest -q` → `117 passed in 7.60s`
+- **静态检查**：`ruff check .` 全绿（规则集 E/F/W/I/B/UP、行宽 120，与 llm-eval-kit 同基线），CI 独立 lint job 失败即红
 - **依赖**：`requirements.txt` 钉死本机实测通过的精确版本（CI 可复现，含 Streamlit Demo 依赖）；`pyproject.toml` 提供库语义的版本范围
 - **示例匹配**（`examples/` 真实运行）：
 
@@ -217,7 +218,7 @@ jd-resume-matcher/
 ├── cli.py              # CLI 演示命令（单对 + 批量模式）
 ├── streamlit_app.py    # Streamlit 交互 Demo（单份匹配 + 批量筛选，纯函数核心 + 薄壳渲染）
 ├── examples/           # 示例 JD、简历与批量目录 batch_resumes/
-├── tests/              # 108 个测试
+├── tests/              # 117 个测试
 ├── pyproject.toml      # 包元数据与依赖范围（精确锁定见 requirements.txt）
 └── .github/workflows/ci.yml
 ```

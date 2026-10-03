@@ -7,10 +7,9 @@
 
 from pathlib import Path
 
+import streamlit_app as app
 from matcher.batch import match_directory
 from matcher.export import CSV_HEADER
-
-import streamlit_app as app
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _EXAMPLES = _REPO_ROOT / "examples"
@@ -132,7 +131,11 @@ def test_match_texts_and_match_directory_produce_identical_ranking(tmp_path):
 
     assert [(e.resume_path, e.result.total_score) for e in from_dir.entries] == \
         [(e.resume_path, e.result.total_score) for e in from_texts.entries]
-    assert (from_dir.total, from_dir.matched, from_dir.failed) == (from_texts.total, from_texts.matched, from_texts.failed)
+    assert (from_dir.total, from_dir.matched, from_dir.failed) == (
+        from_texts.total,
+        from_texts.matched,
+        from_texts.failed,
+    )
 
 
 def test_load_example_batch_skips_unsupported_files():
