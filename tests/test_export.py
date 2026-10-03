@@ -69,7 +69,10 @@ def test_csv_matched_row_fields(batch):
 def test_csv_escapes_comma_and_quotes_in_error():
     # 直接构造失败条目，验证 csv 模块对逗号/引号/换行的转义兜底
     batch = BatchResult(
-        jd_path="jd", total=1, matched=0, failed=1,
+        jd_path="jd",
+        total=1,
+        matched=0,
+        failed=1,
         entries=[BatchEntry(resume_path='we,ird".md', error='空文件, 含"引号"')],
     )
     rows = _rows(batch_to_csv(batch))

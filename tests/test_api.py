@@ -29,14 +29,12 @@ def test_match_returns_full_shape():
 
 def test_match_reasons_carry_evidence():
     body = client.post("/match", json={"jd_text": _JD, "resume_text": _RESUME}).json()
-    evidenced = [
-        r for f in body["score_breakdown"] for r in f["reasons"] if r["evidence"]
-    ]
+    evidenced = [r for f in body["score_breakdown"] for r in f["reasons"] if r["evidence"]]
     assert evidenced, "至少应有理由携带证据"
     for r in evidenced:
         for ev in r["evidence"]:
             source = _JD if ev["source"] == "jd" else _RESUME
-            assert source[ev["start"]:ev["end"]] == ev["text"]
+            assert source[ev["start"] : ev["end"]] == ev["text"]
 
 
 def test_match_validation_error_on_missing_field():
@@ -71,12 +69,10 @@ def test_match_openai_provider_degrades_without_key(monkeypatch):
             "embedding_base_url": "http://127.0.0.1:9/v1",
         },
     ).json()
-    assert body["provider"] == "mock"          # 降级后仍可用
+    assert body["provider"] == "mock"  # 降级后仍可用
     assert "降级" in (body["degraded_note"] or "")
 
 
 def test_match_empty_profile_still_scores():
-    body = client.post(
-        "/match", json={"jd_text": "无具体要求的岗位", "resume_text": "随便写写"}
-    ).json()
+    body = client.post("/match", json={"jd_text": "无具体要求的岗位", "resume_text": "随便写写"}).json()
     assert 0.0 <= body["total_score"] <= 100.0

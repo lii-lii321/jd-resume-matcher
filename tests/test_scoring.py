@@ -34,7 +34,12 @@ def test_strong_resume_outranks_weak_resume():
 def test_breakdown_has_all_factors():
     breakdown = _run()[0][3]
     assert {f.factor for f in breakdown} == {
-        "required_skills", "preferred_skills", "experience", "education", "domain", "semantic",
+        "required_skills",
+        "preferred_skills",
+        "experience",
+        "education",
+        "domain",
+        "semantic",
     }
 
 
@@ -101,13 +106,13 @@ def test_every_reason_evidence_roundtrip():
             assert reason.detail
             for ev in reason.evidence:
                 source_text = jd_text if ev.source == "jd" else resume_text
-                assert source_text[ev.start:ev.end] == ev.text, (
+                assert source_text[ev.start : ev.end] == ev.text, (
                     f"证据不可回溯: {ev.text!r} @ {ev.start}:{ev.end} in {ev.source}"
                 )
 
 
 def test_grade_thresholds():
-    strong = _run()[0]           # 全匹配应达 A/B
+    strong = _run()[0]  # 全匹配应达 A/B
     assert strong[1] in {"A", "B"}
     weak = _run(resume_text="会一点 Excel 的运营，无学历信息")[0]
     assert weak[1] in {"C", "D"}

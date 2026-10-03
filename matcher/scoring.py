@@ -39,10 +39,7 @@ def _required_skills_score(jd: ParsedProfile, resume: ParsedProfile) -> tuple[fl
     missing = [s for s in required if s not in resume_hit]
     score = len(matched) / len(required) * 100.0
 
-    reasons = [
-        Reason(detail=f"硬性技能「{name}」在简历中命中", evidence=resume_hit[name].evidence)
-        for name in matched
-    ]
+    reasons = [Reason(detail=f"硬性技能「{name}」在简历中命中", evidence=resume_hit[name].evidence) for name in matched]
     if missing:
         reasons.append(Reason(detail=f"硬性技能缺失：{'、'.join(missing)}", evidence=[]))
     return score, reasons, missing
@@ -58,13 +55,15 @@ def _preferred_skills_score(jd: ParsedProfile, resume: ParsedProfile) -> tuple[f
     missing = [s for s in preferred if s not in resume_hit]
     score = len(matched) / len(preferred) * 100.0
 
-    reasons = [
-        Reason(detail=f"加分技能「{name}」在简历中命中", evidence=resume_hit[name].evidence)
-        for name in matched
-    ]
+    reasons = [Reason(detail=f"加分技能「{name}」在简历中命中", evidence=resume_hit[name].evidence) for name in matched]
     if missing:
-        reasons.append(Reason(detail=f"加分技能未命中：{'、'.join(missing)}（不作为硬性扣分主因，权重仅 "
-                                       f"{FACTOR_WEIGHTS['preferred_skills']}）", evidence=[]))
+        reasons.append(
+            Reason(
+                detail=f"加分技能未命中：{'、'.join(missing)}（不作为硬性扣分主因，权重仅 "
+                f"{FACTOR_WEIGHTS['preferred_skills']}）",
+                evidence=[],
+            )
+        )
     return score, reasons
 
 
@@ -74,20 +73,26 @@ def _experience_score(jd: ParsedProfile, resume: ParsedProfile) -> tuple[float |
     if need is None:
         return None, []
     if got is None:
-        return 0.0, [Reason(
-            detail=f"JD 要求约 {need:g} 年经验，简历未解析出年限",
-            evidence=jd.experience.evidence,
-        )]
+        return 0.0, [
+            Reason(
+                detail=f"JD 要求约 {need:g} 年经验，简历未解析出年限",
+                evidence=jd.experience.evidence,
+            )
+        ]
     if got >= need:
-        return 100.0, [Reason(
-            detail=f"简历年限 {got:g} 年满足 JD 要求的 {need:g} 年",
-            evidence=jd.experience.evidence + resume.experience.evidence,
-        )]
+        return 100.0, [
+            Reason(
+                detail=f"简历年限 {got:g} 年满足 JD 要求的 {need:g} 年",
+                evidence=jd.experience.evidence + resume.experience.evidence,
+            )
+        ]
     penalty = (need - got) * EXPERIENCE_PENALTY_PER_YEAR
-    return max(0.0, 100.0 - penalty), [Reason(
-        detail=f"简历年限 {got:g} 年低于 JD 要求 {need:g} 年，每缺 1 年扣 {EXPERIENCE_PENALTY_PER_YEAR:g} 分",
-        evidence=jd.experience.evidence + resume.experience.evidence,
-    )]
+    return max(0.0, 100.0 - penalty), [
+        Reason(
+            detail=f"简历年限 {got:g} 年低于 JD 要求 {need:g} 年，每缺 1 年扣 {EXPERIENCE_PENALTY_PER_YEAR:g} 分",
+            evidence=jd.experience.evidence + resume.experience.evidence,
+        )
+    ]
 
 
 def _education_score(jd: ParsedProfile, resume: ParsedProfile) -> tuple[float | None, list[Reason]]:
@@ -96,23 +101,29 @@ def _education_score(jd: ParsedProfile, resume: ParsedProfile) -> tuple[float | 
     if need is None:
         return None, []
     if got is None:
-        return EDUCATION_UNKNOWN_RESUME, [Reason(
-            detail=f"JD 要求{jd.education.level or ''}学历，简历未解析出学历",
-            evidence=jd.education.evidence,
-        )]
+        return EDUCATION_UNKNOWN_RESUME, [
+            Reason(
+                detail=f"JD 要求{jd.education.level or ''}学历，简历未解析出学历",
+                evidence=jd.education.evidence,
+            )
+        ]
     if got >= need:
-        return 100.0, [Reason(
-            detail=f"简历学历（{resume.education.level}）满足 JD 要求（{jd.education.level}）",
-            evidence=jd.education.evidence + resume.education.evidence,
-        )]
+        return 100.0, [
+            Reason(
+                detail=f"简历学历（{resume.education.level}）满足 JD 要求（{jd.education.level}）",
+                evidence=jd.education.evidence + resume.education.evidence,
+            )
+        ]
     gap = need - got
     score = EDUCATION_ONE_LEVEL_BELOW if gap == 1 else EDUCATION_TWO_OR_MORE_BELOW
     note = "一级" if gap == 1 else "两级及以上"
-    return score, [Reason(
-        detail=f"简历学历（{resume.education.level}）低于 JD 要求（{jd.education.level}）{note}，"
-               f"按固定档位计 {score:g} 分（无经验补偿机制）",
-        evidence=jd.education.evidence + resume.education.evidence,
-    )]
+    return score, [
+        Reason(
+            detail=f"简历学历（{resume.education.level}）低于 JD 要求（{jd.education.level}）{note}，"
+            f"按固定档位计 {score:g} 分（无经验补偿机制）",
+            evidence=jd.education.evidence + resume.education.evidence,
+        )
+    ]
 
 
 def _domain_score(jd: ParsedProfile, resume: ParsedProfile) -> tuple[float | None, list[Reason]]:
@@ -132,11 +143,13 @@ def _domain_score(jd: ParsedProfile, resume: ParsedProfile) -> tuple[float | Non
         evidence = [e for e in (resume_ev.get(d), jd_ev.get(d)) if e is not None]
         reasons.append(Reason(detail=f"领域「{d}」双方匹配", evidence=evidence))
     if not overlap:
-        reasons.append(Reason(
-            detail=f"JD 领域（{'、'.join(jd.domains.domains)}）与简历领域"
-                   f"（{'、'.join(resume.domains.domains) or '无'}）无交集",
-            evidence=jd.domains.evidence,
-        ))
+        reasons.append(
+            Reason(
+                detail=f"JD 领域（{'、'.join(jd.domains.domains)}）与简历领域"
+                f"（{'、'.join(resume.domains.domains) or '无'}）无交集",
+                evidence=jd.domains.evidence,
+            )
+        )
     return score, reasons
 
 
@@ -147,11 +160,13 @@ def _semantic_score(scorer: SemanticScorer | None, jd_text: str, resume_text: st
     raw = scorer.score(jd_text, resume_text)
     mapped = max(0.0, min(1.0, raw / SEMANTIC_COSINE_CEILING)) * 100.0
     preview_len = min(60, len(jd_text))
-    return mapped, [Reason(
-        detail=f"全文语义相似度（{scorer.name}）：余弦 {raw:.3f}，"
-               f"按上限 {SEMANTIC_COSINE_CEILING} 校准映射为 {mapped:.1f} 分",
-        evidence=[Evidence(text=jd_text[:preview_len], start=0, end=preview_len, source="jd")],
-    )]
+    return mapped, [
+        Reason(
+            detail=f"全文语义相似度（{scorer.name}）：余弦 {raw:.3f}，"
+            f"按上限 {SEMANTIC_COSINE_CEILING} 校准映射为 {mapped:.1f} 分",
+            evidence=[Evidence(text=jd_text[:preview_len], start=0, end=preview_len, source="jd")],
+        )
+    ]
 
 
 def compute_match(
@@ -180,18 +195,28 @@ def compute_match(
     for factor, (score, reasons) in raw_scores.items():
         base_w = FACTOR_WEIGHTS[factor]
         if score is None:
-            breakdown.append(FactorScore(
-                factor=factor, base_weight=base_w, effective_weight=0.0, score=0.0,
-                reasons=[Reason(detail="JD 未提供该因素依据，因素禁用，权重摊回其余因素", evidence=[])],
-                disabled=True,
-            ))
+            breakdown.append(
+                FactorScore(
+                    factor=factor,
+                    base_weight=base_w,
+                    effective_weight=0.0,
+                    score=0.0,
+                    reasons=[Reason(detail="JD 未提供该因素依据，因素禁用，权重摊回其余因素", evidence=[])],
+                    disabled=True,
+                )
+            )
             continue
         eff_w = base_w / base_total if WEIGHT_REDISTRIBUTE else base_w
         total += score * eff_w
-        breakdown.append(FactorScore(
-            factor=factor, base_weight=base_w, effective_weight=round(eff_w, 4),
-            score=round(score, 1), reasons=reasons,
-        ))
+        breakdown.append(
+            FactorScore(
+                factor=factor,
+                base_weight=base_w,
+                effective_weight=round(eff_w, 4),
+                score=round(score, 1),
+                reasons=reasons,
+            )
+        )
 
     for grade_floor, grade, label in GRADE_THRESHOLDS:
         if total >= grade_floor:

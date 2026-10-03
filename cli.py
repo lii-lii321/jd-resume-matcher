@@ -118,11 +118,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--provider", choices=["mock", "openai_compatible"], default="mock")
     parser.add_argument("--base-url", default=None, help="openai_compatible 的 /v1 根地址")
     parser.add_argument("--model", default=None, help="嵌入模型名")
-    parser.add_argument("--vocab", default=None, metavar="路径",
-                        help="自定义技能词表 JSON（与内置词表按规范名合并，用户条目优先；格式见 README 自定义词表）")
+    parser.add_argument(
+        "--vocab",
+        default=None,
+        metavar="路径",
+        help="自定义技能词表 JSON（与内置词表按规范名合并，用户条目优先；格式见 README 自定义词表）",
+    )
     parser.add_argument("--json", action="store_true", help="输出 JSON")
     parser.add_argument(
-        "--min-score", type=float, default=None,
+        "--min-score",
+        type=float,
+        default=None,
         help="低于该分退出码为 1（批量模式：无人达标退出码 1）",
     )
     args = parser.parse_args(argv)

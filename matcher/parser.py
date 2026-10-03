@@ -50,6 +50,7 @@ def _skill_alias_maps(skill_taxonomy: dict[str, list[str]] | None) -> tuple[dict
     alias_map = flatten_alias_map(skill_taxonomy)
     return alias_map, sorted(alias_map, key=len, reverse=True)
 
+
 _MAJOR_PATTERN = re.compile(r"([\u4e00-\u9fa5A-Za-z][\u4e00-\u9fa5A-Za-z ]{1,12}?)(?:专业)")
 _MAJOR_RELATED_PATTERN = re.compile(r"([\u4e00-\u9fa5A-Za-z]{2,10})(?:相关专业)")
 
@@ -117,9 +118,7 @@ def parse_education(text: str, source: Literal["jd", "resume"]) -> EducationInfo
     if m:
         major = m.group(1).strip()
     return EducationInfo(
-        level=None if best_rank is None else next(
-            lv["name"] for lv in EDUCATION_LEVELS if lv["rank"] == best_rank
-        ),
+        level=None if best_rank is None else next(lv["name"] for lv in EDUCATION_LEVELS if lv["rank"] == best_rank),
         rank=best_rank,
         major=major,
         evidence=best_evidence,
@@ -165,12 +164,12 @@ def _extended_year_candidates(text: str) -> list[tuple[float, int, int]]:
         keep(0.5, start, m.end())
     for m in _MONTHS.finditer(text):
         start = m.start()
-        if _DATE_YEAR_PREFIX.search(text[max(0, start - 5): start]):
+        if _DATE_YEAR_PREFIX.search(text[max(0, start - 5) : start]):
             continue  # "2024年12个月"式的日期粘连
         value = _cn_numeral_to_float(m.group("num"))
         if value is None:
             continue
-        window = text[max(0, start - _YEAR_CONTEXT_WINDOW): m.end() + _YEAR_CONTEXT_WINDOW]
+        window = text[max(0, start - _YEAR_CONTEXT_WINDOW) : m.end() + _YEAR_CONTEXT_WINDOW]
         if _YEAR_CONTEXT_KEYWORDS.search(window):  # 月份必须是时长语境，进一步防日期误报
             keep(round(value / 12, 4), start, m.end())
     return candidates
@@ -197,14 +196,14 @@ def parse_experience(text: str, source: Literal["jd", "resume"]) -> ExperienceIn
         return ExperienceInfo()
 
     def near_context(span: tuple[float, int, int]) -> bool:
-        window = text[max(0, span[1] - _YEAR_CONTEXT_WINDOW): span[2] + _YEAR_CONTEXT_WINDOW]
+        window = text[max(0, span[1] - _YEAR_CONTEXT_WINDOW) : span[2] + _YEAR_CONTEXT_WINDOW]
         return bool(_YEAR_CONTEXT_KEYWORDS.search(window))
 
     scoped = [c for c in candidates if near_context(c)]
     chosen = max(scoped or candidates, key=lambda c: c[0])
     return ExperienceInfo(
         years=chosen[0],
-        evidence=[Evidence(text=text[chosen[1]:chosen[2]], start=chosen[1], end=chosen[2], source=source)],
+        evidence=[Evidence(text=text[chosen[1] : chosen[2]], start=chosen[1], end=chosen[2], source=source)],
     )
 
 
@@ -236,7 +235,7 @@ def parse_profile(
     if source == "jd":
         m = _PREFERRED_SECTION_MARK.search(text)
         if m:
-            required_part, preferred_part = text[: m.start()], text[m.start():]
+            required_part, preferred_part = text[: m.start()], text[m.start() :]
             required_hits = parse_skills(required_part, source, skill_taxonomy)
             preferred_raw = parse_skills(preferred_part, source, skill_taxonomy)
             required_names = {h.name for h in required_hits}

@@ -36,17 +36,19 @@ def batch_to_csv(batch: BatchResult) -> str:
         if entry.result is not None:
             rank += 1
             r = entry.result
-            writer.writerow([
-                rank,
-                entry.resume_path,
-                r.total_score,
-                r.grade,
-                r.grade_label,
-                "、".join(r.missing_required_skills),
-                int(r.semantic_enabled),
-                r.provider,
-                "",
-            ])
+            writer.writerow(
+                [
+                    rank,
+                    entry.resume_path,
+                    r.total_score,
+                    r.grade,
+                    r.grade_label,
+                    "、".join(r.missing_required_skills),
+                    int(r.semantic_enabled),
+                    r.provider,
+                    "",
+                ]
+            )
         else:
             writer.writerow(["", entry.resume_path, "", "", "", "", "", "", entry.error])
     return buf.getvalue()

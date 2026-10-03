@@ -48,6 +48,7 @@ def test_missing_args_exits_with_error():
 
 # ---------- 批量模式（--resume-dir） ----------
 
+
 @pytest.fixture()
 def batch_dir(tmp_path):
     d = tmp_path / "resumes"

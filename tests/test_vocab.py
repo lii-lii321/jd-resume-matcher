@@ -27,6 +27,7 @@ def _write_user_vocab(tmp_path: Path, skills: dict, with_version: bool = True) -
 
 # ---------- 内置词表加载 ----------
 
+
 def test_bundled_vocab_loads_with_valid_structure():
     vocab = load_vocab()
     assert len(vocab) > 0
@@ -46,18 +47,22 @@ def test_vocab_json_carries_schema_and_description():
 
 # ---------- 叠加合并语义 ----------
 
+
 def test_load_vocab_merges_add_and_override(tmp_path):
-    user = _write_user_vocab(tmp_path, {
-        "Rust": ["rust", "rustlang"],   # 新增
-        "Python": ["python"],           # 覆盖（整体替换内置别名列表）
-    })
+    user = _write_user_vocab(
+        tmp_path,
+        {
+            "Rust": ["rust", "rustlang"],  # 新增
+            "Python": ["python"],  # 覆盖（整体替换内置别名列表）
+        },
+    )
     merged = load_vocab(user)
 
-    assert merged["Rust"] == ["rust", "rustlang"]          # 新增生效
-    assert merged["Python"] == ["python"]                  # 用户条目优先
-    assert merged["Java"] == SKILL_TAXONOMY["Java"]        # 未提及的内置条目保留
+    assert merged["Rust"] == ["rust", "rustlang"]  # 新增生效
+    assert merged["Python"] == ["python"]  # 用户条目优先
+    assert merged["Java"] == SKILL_TAXONOMY["Java"]  # 未提及的内置条目保留
     assert set(merged) == set(SKILL_TAXONOMY) | {"Rust"}
-    assert load_vocab() == SKILL_TAXONOMY                  # 默认加载不受叠加影响
+    assert load_vocab() == SKILL_TAXONOMY  # 默认加载不受叠加影响
 
 
 def test_load_vocab_rejects_invalid_user_files(tmp_path):
@@ -81,13 +86,16 @@ def test_load_vocab_rejects_invalid_user_files(tmp_path):
 
 # ---------- 词表影响打分 ----------
 
+
 def test_custom_vocab_changes_scoring_result():
     default = match_jd_resume(_RUST_JD, _RUST_RESUME, use_semantic=False, include_profiles=True)
     assert default.jd_profile.skills == []  # 默认词表不认识 Rust
 
     custom = match_jd_resume(
-        _RUST_JD, _RUST_RESUME,
-        use_semantic=False, include_profiles=True,
+        _RUST_JD,
+        _RUST_RESUME,
+        use_semantic=False,
+        include_profiles=True,
         skill_taxonomy={**SKILL_TAXONOMY, "Rust": ["rust"]},
     )
     assert [h.name for h in custom.jd_profile.skills] == ["Rust"]
@@ -104,6 +112,7 @@ def test_default_path_identical_whether_taxonomy_arg_is_none_or_omitted():
 
 
 # ---------- CLI --vocab ----------
+
 
 def test_cli_vocab_flag_enables_new_skill(tmp_path, capsys):
     jd = tmp_path / "jd.txt"

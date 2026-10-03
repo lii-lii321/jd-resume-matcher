@@ -42,6 +42,7 @@ FACTOR_LABELS = {
 # 纯函数层（不依赖 st.*，pytest 直接覆盖）
 # --------------------------------------------------------------------------
 
+
 def factor_label(factor: str) -> str:
     """因素英文名 -> 中文展示名；未知名原样返回。"""
     return FACTOR_LABELS.get(factor, factor)
@@ -98,10 +99,7 @@ def weighted_contributions(result: MatchResult) -> dict[str, float]:
 
     禁用因素贡献恒为 0，仍出现在图里，方便看出"权重摊回"发生了哪些因素上。
     """
-    return {
-        factor_label(f.factor): round(f.effective_weight * f.score, 1)
-        for f in result.score_breakdown
-    }
+    return {factor_label(f.factor): round(f.effective_weight * f.score, 1) for f in result.score_breakdown}
 
 
 def reason_rows(result: MatchResult) -> list[dict]:
@@ -110,15 +108,16 @@ def reason_rows(result: MatchResult) -> list[dict]:
     for f in result.score_breakdown:
         contribution = round(f.effective_weight * f.score, 1)
         for r in f.reasons:
-            rows.append({
-                "factor": factor_label(f.factor),
-                "contribution": contribution,
-                "detail": r.detail,
-                "evidence": [
-                    {"text": e.text, "start": e.start, "end": e.end, "source": e.source}
-                    for e in r.evidence
-                ],
-            })
+            rows.append(
+                {
+                    "factor": factor_label(f.factor),
+                    "contribution": contribution,
+                    "detail": r.detail,
+                    "evidence": [
+                        {"text": e.text, "start": e.start, "end": e.end, "source": e.source} for e in r.evidence
+                    ],
+                }
+            )
     return rows
 
 
@@ -130,25 +129,29 @@ def batch_rows(batch: BatchResult) -> list[dict]:
         if entry.result is not None:
             rank += 1
             r = entry.result
-            rows.append({
-                "名次": rank,
-                "简历": entry.resume_path,
-                "总分": r.total_score,
-                "等级": f"{r.grade} {r.grade_label}",
-                "硬性技能缺口": "、".join(r.missing_required_skills),
-                "语义": r.provider if r.semantic_enabled else "禁用",
-                "错误": "",
-            })
+            rows.append(
+                {
+                    "名次": rank,
+                    "简历": entry.resume_path,
+                    "总分": r.total_score,
+                    "等级": f"{r.grade} {r.grade_label}",
+                    "硬性技能缺口": "、".join(r.missing_required_skills),
+                    "语义": r.provider if r.semantic_enabled else "禁用",
+                    "错误": "",
+                }
+            )
         else:
-            rows.append({
-                "名次": "",
-                "简历": entry.resume_path,
-                "总分": "",
-                "等级": "",
-                "硬性技能缺口": "",
-                "语义": "",
-                "错误": entry.error or "",
-            })
+            rows.append(
+                {
+                    "名次": "",
+                    "简历": entry.resume_path,
+                    "总分": "",
+                    "等级": "",
+                    "硬性技能缺口": "",
+                    "语义": "",
+                    "错误": entry.error or "",
+                }
+            )
     return rows
 
 
@@ -160,6 +163,7 @@ def csv_bytes(batch: BatchResult) -> bytes:
 # --------------------------------------------------------------------------
 # Streamlit 薄壳
 # --------------------------------------------------------------------------
+
 
 def _render_single(default_jd: str, default_resume: str) -> None:
     left, right = st.columns(2)
@@ -243,8 +247,10 @@ def _render_batch(default_jd: str, example_items: list[tuple[str, str]]) -> None
         file_name="ranked_resumes.csv",
         mime="text/csv",
     )
-    st.caption("CSV 列与 CLI --csv 导出完全一致（matcher/export.py）：rank, resume_path, total_score, grade, "
-               "grade_label, missing_required_skills, semantic_enabled, provider, error。")
+    st.caption(
+        "CSV 列与 CLI --csv 导出完全一致（matcher/export.py）：rank, resume_path, total_score, grade, "
+        "grade_label, missing_required_skills, semantic_enabled, provider, error。"
+    )
 
 
 def main() -> None:

@@ -44,7 +44,7 @@ def test_skills_evidence_spans_roundtrip():
     for hit in parse_skills(text, "resume"):
         for ev in hit.evidence:
             assert ev.source == "resume"
-            assert text[ev.start:ev.end] == ev.text
+            assert text[ev.start : ev.end] == ev.text
 
 
 def test_education_rank_and_major():
@@ -141,10 +141,7 @@ def test_years_clamp_out_of_range_discarded():
 
 
 def test_years_end_to_end_resume_text():
-    text = (
-        "张三\n本科，计算机科学与技术专业\n"
-        "工作经历：某科技公司后端开发工程师，两年半 Python 经验，负责订单系统。"
-    )
+    text = "张三\n本科，计算机科学与技术专业\n工作经历：某科技公司后端开发工程师，两年半 Python 经验，负责订单系统。"
     profile = parse_profile(text, "resume")
     assert profile.experience.years == 2.5
     assert profile.experience.evidence[0].text == "两年半"
@@ -157,9 +154,7 @@ def test_domains_extraction():
 
 
 def test_jd_preferred_section_split():
-    jd = parse_profile(
-        "任职要求：3年 Python 经验，熟悉 FastAPI。\n加分项：熟悉 Kafka。", "jd"
-    )
+    jd = parse_profile("任职要求：3年 Python 经验，熟悉 FastAPI。\n加分项：熟悉 Kafka。", "jd")
     assert {"Python", "FastAPI"} <= set(jd.skill_names())
     assert set(jd.preferred_skill_names()) == {"Kafka"}
 

@@ -55,14 +55,13 @@ def _parse_vocab_document(raw: str, origin: str) -> dict[str, list[str]]:
         raise ValueError(f"{origin} 顶层必须是 JSON 对象")
     skills = doc.get("skills")
     if not isinstance(skills, dict):
-        raise ValueError(f"{origin} 缺少 \"skills\" 字段（应为 规范名 -> 别名列表 的对象）")
+        raise ValueError(f'{origin} 缺少 "skills" 字段（应为 规范名 -> 别名列表 的对象）')
 
     taxonomy: dict[str, list[str]] = {}
     for canonical, aliases in skills.items():
         if not isinstance(canonical, str) or not canonical.strip():
             raise ValueError(f"{origin} 存在空的技能规范名")
-        if not isinstance(aliases, list) or not aliases \
-                or not all(isinstance(a, str) and a.strip() for a in aliases):
+        if not isinstance(aliases, list) or not aliases or not all(isinstance(a, str) and a.strip() for a in aliases):
             raise ValueError(f"{origin} 中技能「{canonical}」的别名必须是非空字符串列表")
         taxonomy[canonical.strip()] = [a.strip() for a in aliases]
     return taxonomy

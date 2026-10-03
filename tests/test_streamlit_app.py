@@ -82,7 +82,9 @@ def test_batch_match_over_example_directory_reproduces_readme_ranking():
     jd, items = app.load_example_batch(_EXAMPLES)
     assert jd.strip()
     assert [name for name, _ in items] == [
-        "chen_ming.md", "lin_xiaoyu.md", "wang_dalisheng.md",
+        "chen_ming.md",
+        "lin_xiaoyu.md",
+        "wang_dalisheng.md",
     ]
 
     batch = app.run_batch_match(jd, items)
@@ -129,8 +131,9 @@ def test_match_texts_and_match_directory_produce_identical_ranking(tmp_path):
     from_dir = match_directory(jd, tmp_path, use_semantic=False)
     from_texts = app.run_batch_match(jd, [("a_strong.md", strong), ("b_weak.md", weak)], use_semantic=False)
 
-    assert [(e.resume_path, e.result.total_score) for e in from_dir.entries] == \
-        [(e.resume_path, e.result.total_score) for e in from_texts.entries]
+    assert [(e.resume_path, e.result.total_score) for e in from_dir.entries] == [
+        (e.resume_path, e.result.total_score) for e in from_texts.entries
+    ]
     assert (from_dir.total, from_dir.matched, from_dir.failed) == (
         from_texts.total,
         from_texts.matched,

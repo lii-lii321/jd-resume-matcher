@@ -36,9 +36,7 @@ def match_jd_resume(
     except EmbeddingError as exc:
         # 运行中失败（网络/配额）：降级为纯规则打分，语义因素禁用、权重摊回
         degraded_note = f"语义打分运行失败（{exc}），已降级为纯规则"
-        total, grade, label, breakdown, missing = compute_match(
-            jd_text, resume_text, jd, resume, semantic_scorer=None
-        )
+        total, grade, label, breakdown, missing = compute_match(jd_text, resume_text, jd, resume, semantic_scorer=None)
         provider = None
 
     return MatchResult(

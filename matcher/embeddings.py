@@ -40,14 +40,7 @@ _BLOCKED_NAME_SUFFIXES = (".localhost", ".local", ".internal", ".lan", ".home.ar
 
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
+    return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified
 
 
 def validate_public_http_url(url: str, resolve: bool = True) -> None:
@@ -117,7 +110,7 @@ class MockEmbeddingProvider:
         vec = [0.0] * MOCK_DIM
         normalized = _normalize(text)
         for i in range(max(0, len(normalized) - NGRAM_SIZE + 1)):
-            gram = normalized[i: i + NGRAM_SIZE]
+            gram = normalized[i : i + NGRAM_SIZE]
             digest = hashlib.sha256(gram.encode("utf-8")).digest()
             bucket = int.from_bytes(digest[:4], "little") % MOCK_DIM
             sign = 1.0 if digest[4] % 2 == 0 else -1.0
@@ -156,9 +149,7 @@ class OpenAICompatibleEmbeddingProvider:
     def _api_key(self) -> str:
         key = os.environ.get(self.api_key_env, "").strip()
         if not key:
-            raise EmbeddingError(
-                f"环境变量 {self.api_key_env} 未设置，无法调用 {self.base_url}"
-            )
+            raise EmbeddingError(f"环境变量 {self.api_key_env} 未设置，无法调用 {self.base_url}")
         return key
 
     def embed(self, texts: list[str]) -> list[list[float]]:

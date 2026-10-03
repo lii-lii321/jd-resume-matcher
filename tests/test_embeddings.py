@@ -78,8 +78,6 @@ def test_validate_url_allows_public_https():
 
 def test_openai_provider_requires_env_key(monkeypatch):
     monkeypatch.delenv("EMBEDDING_API_KEY", raising=False)
-    provider = OpenAICompatibleEmbeddingProvider(
-        "https://api.example-llm.com/v1", resolve=False
-    )
+    provider = OpenAICompatibleEmbeddingProvider("https://api.example-llm.com/v1", resolve=False)
     with pytest.raises(Exception, match="EMBEDDING_API_KEY"):
         provider.embed(["hello"])
