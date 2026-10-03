@@ -10,8 +10,9 @@ JD↔简历结构化匹配与解释器：纯离线规则抽取 + 多因素加权
 - **解析**：规则 + 关键词抽取技能（40+ 规范名，含别名归一）、学历阶梯、工作年限、领域标签，**不依赖 LLM，离线可跑、结果确定**
 - **打分**：六因素加权 `total_score` + `score_breakdown` + 逐条 `reasons`，权重集中在 `matcher/constants.py` 并逐条注明设计依据
 - **批量模式**：`--resume-dir` 一份 JD 筛整个简历文件夹，按总分降序输出候选名单；单份文件损坏/为空只记失败不中断整批，`--min-score` 做"无人达标即失败"的流水线闸门，`--csv` 导出 utf-8-sig 候选名单（Excel 友好）
+- **交互 Demo**：`streamlit run streamlit_app.py` 单文件双页签（单份匹配 + 批量筛选），示例数据预填、打开即出完整结果，展示层之外的纯函数可独立测试
 - **语义路**：嵌入 provider 可插拔 —— `mock`（确定性字符 3-gram 哈希，默认）与 `openai_compatible`（可选）；无 API Key / URL 非法 / 调用失败时**三级优雅降级**到纯规则
-- **交付**：FastAPI `/match` 端点 + CLI 演示命令 + 87 个 pytest 全绿
+- **交付**：FastAPI `/match` 端点 + CLI 演示命令 + Streamlit 交互 Demo + 99 个 pytest 全绿
 
 ## 架构
 
@@ -36,19 +37,22 @@ flowchart LR
 # 1. 安装（Python 3.10+）
 pip install -r requirements.txt
 
-# 2. CLI 演示：内置示例，零参数可跑
+# 2. 交互 Demo（Streamlit，浏览器打开后示例已预填，开页即见完整匹配结果）
+streamlit run streamlit_app.py
+
+# 3. CLI 演示：内置示例，零参数可跑
 python cli.py --demo
 
-# 3. CLI：指定 JD 与简历文件
+# 4. CLI：指定 JD 与简历文件
 python cli.py examples/jd_backend.md examples/resume_strong.md
 
-# 4. 批量模式：一份 JD 对目录下全部简历（.md/.txt），按总分降序输出候选名单
+# 5. 批量模式：一份 JD 对目录下全部简历（.md/.txt），按总分降序输出候选名单
 python cli.py examples/jd_backend.md --resume-dir examples/batch_resumes
 
-# 5. 批量结果导出 CSV（utf-8-sig，Excel 双击打开中文不乱码）
+# 6. 批量结果导出 CSV（utf-8-sig，Excel 双击打开中文不乱码）
 python cli.py examples/jd_backend.md --resume-dir examples/batch_resumes --csv ranked.csv
 
-# 6. 启动 API
+# 7. 启动 API
 uvicorn matcher.main:app --port 8000
 ```
 
@@ -90,6 +94,33 @@ rank,resume_path,total_score,grade,grade_label,missing_required_skills,semantic_
 3,wang_dalisheng.md,29.7,D,不匹配,Docker、FastAPI、Python、RESTful API、Redis、SQL、大数据,1,mock,
 ```
 
+## 交互 Demo
+
+单文件 `streamlit_app.py`，两个页签，examples/ 示例数据预填，打开页面即呈现完整结果：
+
+- **单份匹配**：左右文本框贴 JD 与简历 → 总分与等级（A 强烈推荐 / B 推荐 / C 待定 / D 不匹配）大字展示 + 逐因素贡献水平条形图（贡献 = 生效权重 × 因素得分，合计即总分，禁用因素显式画 0）+ 打分理由列表（每条标注所属因素与权重贡献，命中理由附 JD/简历原文证据片段及字符偏移）；
+- **批量筛选**：上传多份 `.md`/`.txt` 简历对比一份 JD（不上传则自动使用 `examples/batch_resumes/` 三份示例）→ 按总分降序的候选名单（含等级与硬性技能缺口列）+ CSV 下载（复用 `matcher/export.py`，utf-8-sig，Excel 友好）。
+
+代码组织上，"读输入 → 调核心 → 组装展示数据"全部是与 `st.*` 无关的纯函数（`run_single_match` / `run_batch_match` / `weighted_contributions` / `reason_rows` / `batch_rows` / `csv_bytes`），Streamlit 只做渲染薄壳；批量页与 CLI 共用同一条 `matcher/batch.py` 管线，纯函数层由 `tests/test_streamlit_app.py` 直接覆盖。
+
+### 本地运行
+
+```bash
+streamlit run streamlit_app.py
+```
+
+默认走 mock 嵌入 provider，离线确定性，无需任何 API Key。
+
+### 部署到 Streamlit Community Cloud（免费）
+
+1. 确保仓库在 GitHub 上可访问（本仓库即公开仓库 `lii-lii321/jd-resume-matcher`，fork 到自己账号亦可）；
+2. 打开 [share.streamlit.io](https://share.streamlit.io)，用 GitHub 账号登录；
+3. 点 **Create app** → **Deploy a public app from GitHub**；
+4. Repository 填 `lii-lii321/jd-resume-matcher`，Branch 填 `master`（本仓库默认分支），Main file path 填 `streamlit_app.py`；
+5. App URL 自定义后点 **Deploy**，等待依赖安装完成即得公网可访问的 Demo。
+
+无需配置任何环境变量或密钥即可运行（mock provider 离线可用）；若要换 `openai_compatible`，需在 Cloud 的 App 设置里自行配置 `EMBEDDING_API_KEY`，不建议在公开 Demo 中放置真实密钥。
+
 ## 评分设计
 
 权重集中在 `matcher/constants.py`（单一事实来源），设计依据写在常量注释里：
@@ -125,8 +156,8 @@ provider 不可用时自动降级并在 `degraded_note` 里说明原因，打分
 
 本机（Windows 10，Python 3.10.9）实测，以下数字均为真实运行结果：
 
-- **测试**：`python -m pytest -q` → `87 passed in 1.95s`
-- **依赖**：`requirements.txt` 钉死本机实测通过的精确版本（CI 可复现）；`pyproject.toml` 提供库语义的版本范围
+- **测试**：`python -m pytest -q` → `99 passed in 8.35s`
+- **依赖**：`requirements.txt` 钉死本机实测通过的精确版本（CI 可复现，含 Streamlit Demo 依赖）；`pyproject.toml` 提供库语义的版本范围
 - **示例匹配**（`examples/` 真实运行）：
 
 | JD | 简历 | 总分 | 等级 |
@@ -156,8 +187,9 @@ jd-resume-matcher/
 │   ├── service.py      # 服务层管线（API 与 CLI 共用）
 │   └── main.py         # FastAPI 入口
 ├── cli.py              # CLI 演示命令（单对 + 批量模式）
+├── streamlit_app.py    # Streamlit 交互 Demo（单份匹配 + 批量筛选，纯函数核心 + 薄壳渲染）
 ├── examples/           # 示例 JD、简历与批量目录 batch_resumes/
-├── tests/              # 87 个测试
+├── tests/              # 99 个测试
 ├── pyproject.toml      # 包元数据与依赖范围（精确锁定见 requirements.txt）
 └── .github/workflows/ci.yml
 ```

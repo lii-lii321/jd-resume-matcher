@@ -20,6 +20,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+# 交互 Demo（streamlit_app.py）；水平条形图需 streamlit >= 1.44
+demo = ["streamlit>=1.44"]
 
 [project.scripts]
 jd-resume-matcher = "cli:main"
