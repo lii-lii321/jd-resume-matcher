@@ -24,14 +24,69 @@ def _list_resume_files(resume_dir: Path) -> list[Path]:
     )
 
 
-def _read_resume(path: Path) -> str:
-    """读取并校验单份简历文本：空文件与超限文件直接判失败，不进入打分。"""
-    content = path.read_text(encoding="utf-8")
+def validate_resume_text(content: str) -> str:
+    """校验单份简历文本：空文件与超限文件抛 ValueError，不进入打分。"""
     if not content.strip():
         raise ValueError("文件为空")
     if len(content) > MAX_TEXT_CHARS:
         raise ValueError(f"文件超过单份上限 {MAX_TEXT_CHARS} 字符")
     return content
+
+
+def _read_resume(path: Path) -> str:
+    """读取并校验单份简历文本文件。"""
+    return validate_resume_text(path.read_text(encoding="utf-8"))
+
+
+def _sorted_entries(entries: list[BatchEntry]) -> list[BatchEntry]:
+    """排序：成功按总分降序在前，失败殿后。"""
+    matched = sorted(
+        (e for e in entries if e.result is not None),
+        key=lambda e: e.result.total_score,
+        reverse=True,
+    )
+    failed = [e for e in entries if e.error is not None]
+    return matched + failed
+
+
+def _summarize(jd_path_label: str, entries: list[BatchEntry]) -> BatchResult:
+    """汇总条目为 BatchResult：计数 + 排序。"""
+    ordered = _sorted_entries(entries)
+    matched = sum(1 for e in ordered if e.result is not None)
+    return BatchResult(
+        jd_path=jd_path_label,
+        total=len(ordered),
+        matched=matched,
+        failed=len(ordered) - matched,
+        entries=ordered,
+    )
+
+
+def match_texts(
+    jd_text: str,
+    resume_texts: list[tuple[str, str]],
+    jd_path_label: str = "<简历列表>",
+    **match_kwargs,
+) -> BatchResult:
+    """对 (文件名, 文本) 列表逐份匹配；单份校验/打分失败只记录 error，不中断整批。
+
+    与 match_directory 共用校验、打分与排序逻辑，供内存中的简历文本
+    （如 Streamlit 上传）直接走批量管线，无需落盘。
+    其余关键字参数透传给 match_jd_resume，include_profiles 默认改为 False。
+    """
+    match_kwargs.setdefault("include_profiles", False)
+    entries: list[BatchEntry] = []
+    for name, content in resume_texts:
+        try:
+            result = match_jd_resume(
+                jd_text=jd_text,
+                resume_text=validate_resume_text(content),
+                **match_kwargs,
+            )
+            entries.append(BatchEntry(resume_path=name, result=result))
+        except (OSError, ValueError) as exc:  # ValueError: 空文件/超限/解码失败
+            entries.append(BatchEntry(resume_path=name, error=str(exc)))
+    return _summarize(jd_path_label, entries)
 
 
 def match_directory(
@@ -58,16 +113,4 @@ def match_directory(
         except (OSError, ValueError) as exc:  # OSError: 读权限/磁盘问题; ValueError: 空文件/超限/解码失败
             entries.append(BatchEntry(resume_path=path.name, error=str(exc)))
 
-    matched = sorted(
-        (e for e in entries if e.result is not None),
-        key=lambda e: e.result.total_score,
-        reverse=True,
-    )
-    failed = [e for e in entries if e.error is not None]
-    return BatchResult(
-        jd_path=jd_path_label,
-        total=len(entries),
-        matched=len(matched),
-        failed=len(failed),
-        entries=matched + failed,
-    )
+    return _summarize(jd_path_label, entries)
