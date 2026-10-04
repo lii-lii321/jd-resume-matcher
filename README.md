@@ -14,7 +14,7 @@ JD↔简历结构化匹配与解释器：纯离线规则抽取 + 多因素加权
 - **批量模式**：`--resume-dir` 一份 JD 筛整个简历文件夹，按总分降序输出候选名单；单份文件损坏/为空只记失败不中断整批，`--min-score` 做"无人达标即失败"的流水线闸门，`--csv` 导出 utf-8-sig 候选名单（Excel 友好）
 - **交互 Demo**：`streamlit run streamlit_app.py` 单文件双页签（单份匹配 + 批量筛选），示例数据预填、打开即出完整结果，展示层之外的纯函数可独立测试
 - **语义路**：嵌入 provider 可插拔 —— `mock`（确定性字符 3-gram 哈希，默认）与 `openai_compatible`（可选）；无 API Key / URL 非法 / 调用失败时**三级优雅降级**到纯规则
-- **交付**：FastAPI `/match` 端点 + CLI 演示命令 + Streamlit 交互 Demo + 122 个 pytest 全绿 + ruff 静态检查门禁
+- **交付**：FastAPI `/match` 端点 + CLI 演示命令 + Streamlit 交互 Demo + 122 个 pytest 全绿 + ruff/mypy 静态检查门禁
 
 ## 架构
 

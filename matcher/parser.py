@@ -154,9 +154,9 @@ def _extended_year_candidates(text: str) -> list[tuple[float, int, int]]:
         if value <= _YEAR_MAX:  # "2020-2024年"这类年份区间整组丢弃
             keep(value, m.start(), m.end())
     for m in _NUM_AND_HALF.finditer(text):
-        value = _cn_numeral_to_float(m.group("num"))
-        if value is not None:
-            keep(value + 0.5, m.start(), m.end())
+        half_base = _cn_numeral_to_float(m.group("num"))
+        if half_base is not None:
+            keep(half_base + 0.5, m.start(), m.end())
     for m in _HALF_YEAR.finditer(text):
         start = m.start()
         if start > 0 and text[start - 1] in _HALF_BANNED_PREFIX:
@@ -166,12 +166,12 @@ def _extended_year_candidates(text: str) -> list[tuple[float, int, int]]:
         start = m.start()
         if _DATE_YEAR_PREFIX.search(text[max(0, start - 5) : start]):
             continue  # "2024年12个月"式的日期粘连
-        value = _cn_numeral_to_float(m.group("num"))
-        if value is None:
+        months_val = _cn_numeral_to_float(m.group("num"))
+        if months_val is None:
             continue
         window = text[max(0, start - _YEAR_CONTEXT_WINDOW) : m.end() + _YEAR_CONTEXT_WINDOW]
         if _YEAR_CONTEXT_KEYWORDS.search(window):  # 月份必须是时长语境，进一步防日期误报
-            keep(round(value / 12, 4), start, m.end())
+            keep(round(months_val / 12, 4), start, m.end())
     return candidates
 
 

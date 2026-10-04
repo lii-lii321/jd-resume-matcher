@@ -40,9 +40,11 @@ def _read_resume(path: Path) -> str:
 
 def _sorted_entries(entries: list[BatchEntry]) -> list[BatchEntry]:
     """排序：成功按总分降序在前，失败殿后。"""
+    with_results = [e for e in entries if e.result is not None]
     matched = sorted(
-        (e for e in entries if e.result is not None),
-        key=lambda e: e.result.total_score,
+        with_results,
+        # 上面已过滤 None，恒真分支仅为类型收窄的兜底
+        key=lambda e: e.result.total_score if e.result else 0.0,
         reverse=True,
     )
     failed = [e for e in entries if e.error is not None]

@@ -26,6 +26,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from matcher.batch import match_directory
 from matcher.export import write_batch_csv
@@ -179,8 +180,9 @@ def _print_batch_report(batch) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    stdout: Any = sys.stdout  # 别名 Any：reconfigure 仅部分流实现提供
+    if stdout.encoding and stdout.encoding.lower() not in ("utf-8", "utf8"):
+        stdout.reconfigure(encoding="utf-8", errors="replace")
 
     parser = argparse.ArgumentParser(description="JD↔简历匹配解释器（离线规则 + 可插拔语义）")
     parser.add_argument("jd", nargs="?", help="JD 文本文件路径")
@@ -272,11 +274,8 @@ def main(argv: list[str] | None = None) -> int:
 
         # 批量闸门语义：无人达标（或全员失败）视为未通过，退出码 1
         if args.min_score is not None and not batch.passed(args.min_score):
-            print(
-                f"无人达到阈值 {args.min_score}"
-                f"（最高 {batch.entries[0].result.total_score if batch.matched else '无'}）",
-                file=sys.stderr,
-            )
+            top_score = batch.entries[0].result.total_score if batch.entries and batch.entries[0].result else "无"
+            print(f"无人达到阈值 {args.min_score}（最高 {top_score}）", file=sys.stderr)
             return 1
         return 0
 
