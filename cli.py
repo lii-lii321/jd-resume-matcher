@@ -3,13 +3,23 @@
 用法：
   python cli.py examples/jd_backend.md examples/resume_strong.md
   python cli.py --demo                     # 内置示例对，零参数可跑
-  python cli.py jd.txt resume.txt --json   # 机器可读输出
+  python cli.py jd.txt resume.txt --json   # 机器可读输出（stdout 纯 JSON，可管道）
   python cli.py jd.txt resume.txt --min-score 70   # 低于阈值退出码 1，便于流水线闸门
   python cli.py jd.txt --resume-dir resumes/       # 批量模式：一份 JD 对目录下全部简历
                                                    # 按总分降序输出候选名单；
                                                    # 配 --min-score 时无人达标退出码 1
   python cli.py jd.txt --resume-dir resumes/ --csv out.csv   # 批量结果导出 CSV（utf-8-sig）
+  python cli.py jd.txt --resume-dir resumes/ --json         # 批量结果结构化输出（与 --csv 互斥）
   python cli.py jd.txt resume.txt --vocab my_vocab.json      # 叠加自定义技能词表（用户条目优先）
+
+--json schema（与 --csv 互斥；提示/告警类文本一律走 stderr，保证 stdout 可直接管道）：
+  单份：{"result": {total_score, grade, grade_label, missing_required_skills,
+                    semantic_enabled, provider, degraded_note?,
+                    breakdown: [{factor, base_weight, effective_weight, score,
+                                 contribution, disabled}],
+                    reasons: [{text, factor, evidence: [{source, snippet, start, end}]}]}}
+  批量：{"results": [{file, total_score, grade, grade_label, missing_required_skills}
+                     | {file, error}]}   # 排序与文本模式一致：总分降序，失败殿后
 """
 
 import argparse
@@ -64,6 +74,70 @@ def _read_text(path: str) -> str:
     if not content.strip():
         raise SystemExit(f"错误：文件为空：{path}")
     return content
+
+
+def _evidence_json(evidence) -> list[dict]:
+    """证据片段序列化：核心层自带字符偏移，原样带上（snippet 即原文 text）。"""
+    return [{"source": ev.source, "snippet": ev.text, "start": ev.start, "end": ev.end} for ev in evidence]
+
+
+def _result_json_payload(result) -> dict:
+    """单份结果 -> 紧凑机器可读 schema（contribution = 生效权重 × 因素得分，合计即总分）。"""
+    breakdown = []
+    reasons = []
+    for f in result.score_breakdown:
+        contribution = round(f.score * f.effective_weight, 2)
+        breakdown.append(
+            {
+                "factor": f.factor,
+                "base_weight": f.base_weight,
+                "effective_weight": f.effective_weight,
+                "score": f.score,
+                "contribution": contribution,
+                "disabled": f.disabled,
+            }
+        )
+        for r in f.reasons:
+            reasons.append(
+                {
+                    "text": r.detail,
+                    "factor": f.factor,
+                    "evidence": _evidence_json(r.evidence),
+                }
+            )
+    payload = {
+        "total_score": result.total_score,
+        "grade": result.grade,
+        "grade_label": result.grade_label,
+        "missing_required_skills": list(result.missing_required_skills),
+        "semantic_enabled": result.semantic_enabled,
+        "provider": result.provider,
+        "breakdown": breakdown,
+        "reasons": reasons,
+    }
+    if result.degraded_note:
+        payload["degraded_note"] = result.degraded_note
+    return {"result": payload}
+
+
+def _batch_json_payload(batch) -> dict:
+    """批量结果 -> 扁平候选名单 schema；条目顺序与文本模式一致（总分降序，失败殿后）。"""
+    results = []
+    for entry in batch.entries:
+        if entry.result is not None:
+            r = entry.result
+            results.append(
+                {
+                    "file": entry.resume_path,
+                    "total_score": r.total_score,
+                    "grade": r.grade,
+                    "grade_label": r.grade_label,
+                    "missing_required_skills": list(r.missing_required_skills),
+                }
+            )
+        else:
+            results.append({"file": entry.resume_path, "error": entry.error})
+    return {"results": results}
 
 
 def _print_report(result, jd_path: str, resume_path: str) -> None:
@@ -143,6 +217,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.csv and not args.resume_dir:
         parser.error("--csv 仅支持批量模式（配合 --resume-dir 使用）")
 
+    if args.json and args.csv:
+        parser.error("--json 与 --csv 互斥：--json 向 stdout 输出结构化结果，--csv 落盘 CSV 文件，请二选一")
+
     common_kwargs = dict(
         use_semantic=not args.no_semantic,
         provider_name=args.provider,
@@ -158,7 +235,7 @@ def main(argv: list[str] | None = None) -> int:
         result = match_jd_resume(jd_text=jd_text, resume_text=resume_text, **common_kwargs)
 
         if args.json:
-            print(json.dumps(result.model_dump(), ensure_ascii=False, indent=2))
+            print(json.dumps(_result_json_payload(result), ensure_ascii=False, indent=2))
         else:
             _print_report(result, jd_label, resume_label)
 
@@ -185,7 +262,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(f"目录中没有受支持的简历文件（.md/.txt）：{args.resume_dir}")
 
         if args.json:
-            print(json.dumps(batch.model_dump(), ensure_ascii=False, indent=2))
+            print(json.dumps(_batch_json_payload(batch), ensure_ascii=False, indent=2))
         else:
             _print_batch_report(batch)
 
@@ -211,7 +288,7 @@ def main(argv: list[str] | None = None) -> int:
     result = match_jd_resume(jd_text=jd_text, resume_text=resume_text, **common_kwargs)
 
     if args.json:
-        print(json.dumps(result.model_dump(), ensure_ascii=False, indent=2))
+        print(json.dumps(_result_json_payload(result), ensure_ascii=False, indent=2))
     else:
         _print_report(result, jd_label, resume_label)
 

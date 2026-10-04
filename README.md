@@ -14,7 +14,7 @@ JD↔简历结构化匹配与解释器：纯离线规则抽取 + 多因素加权
 - **批量模式**：`--resume-dir` 一份 JD 筛整个简历文件夹，按总分降序输出候选名单；单份文件损坏/为空只记失败不中断整批，`--min-score` 做"无人达标即失败"的流水线闸门，`--csv` 导出 utf-8-sig 候选名单（Excel 友好）
 - **交互 Demo**：`streamlit run streamlit_app.py` 单文件双页签（单份匹配 + 批量筛选），示例数据预填、打开即出完整结果，展示层之外的纯函数可独立测试
 - **语义路**：嵌入 provider 可插拔 —— `mock`（确定性字符 3-gram 哈希，默认）与 `openai_compatible`（可选）；无 API Key / URL 非法 / 调用失败时**三级优雅降级**到纯规则
-- **交付**：FastAPI `/match` 端点 + CLI 演示命令 + Streamlit 交互 Demo + 117 个 pytest 全绿 + ruff 静态检查门禁
+- **交付**：FastAPI `/match` 端点 + CLI 演示命令 + Streamlit 交互 Demo + 122 个 pytest 全绿 + ruff 静态检查门禁
 
 ## 架构
 
@@ -71,7 +71,7 @@ EOF
 
 响应核心字段：`total_score`（0-100）、`grade`/`grade_label`（A 强烈推荐 / B 推荐 / C 待定 / D 不匹配）、`score_breakdown`（逐因素：基础权重、生效权重、得分、理由）、每条 `reason` 附 `evidence[]`（原文片段 + 字符偏移 + 来自 JD/简历）。
 
-可选命令行参数：`--no-semantic`（纯规则）、`--json`、`--min-score N`（低于阈值退出码 1，可做流水线闸门；批量模式语义为"无人达标退出码 1"）、`--resume-dir 目录`（批量模式，需同时给 JD 文件）、`--vocab 词表.json`（叠加自定义技能词表，见下节）、`--provider openai_compatible --base-url ... --model ...`。
+可选命令行参数：`--no-semantic`（纯规则）、`--json`（结构化输出，stdout 纯 JSON 可直接管道，见下节；与 `--csv` 互斥）、`--min-score N`（低于阈值退出码 1，可做流水线闸门；批量模式语义为"无人达标退出码 1"）、`--resume-dir 目录`（批量模式，需同时给 JD 文件）、`--vocab 词表.json`（叠加自定义技能词表，见下节）、`--provider openai_compatible --base-url ... --model ...`。
 
 批量模式输出示例（真实运行）：
 
@@ -85,7 +85,7 @@ EOF
 ================================================================
 ```
 
-失败条目（如空文件、超过 5 万字符上限）列在名单末尾并附原因，`--json` 时以 `error` 字段给出，`total/matched/failed` 计数齐全。
+失败条目（如空文件、超过 5 万字符上限）列在名单末尾并附原因；`--csv` 时落在 `error` 列，`--json` 时为 `{file, error}` 条目（见下节）。
 
 批量模式加 `--csv 路径` 可把候选名单导出为 CSV（utf-8-sig 带 BOM，Excel 直接打开不乱码），列为扁平汇总：`rank, resume_path, total_score, grade, grade_label, missing_required_skills, semantic_enabled, provider, error`，真实运行示例（`examples/jd_backend.md --resume-dir examples/batch_resumes --csv`）：
 
@@ -95,6 +95,57 @@ rank,resume_path,total_score,grade,grade_label,missing_required_skills,semantic_
 2,lin_xiaoyu.md,48.5,D,不匹配,Docker、FastAPI、RESTful API、Redis,1,mock,
 3,wang_dalisheng.md,29.7,D,不匹配,Docker、FastAPI、Python、RESTful API、Redis、SQL、大数据,1,mock,
 ```
+
+### --json 结构化输出（可编程消费）
+
+单份与批量模式均可加 `--json`：stdout 只输出 UTF-8 JSON（`ensure_ascii=False`，缩进 2），提示/告警类文本一律走 stderr，可直接管道给 `jq` 等工具；`--json` 与 `--csv` 互斥，同时给出时以退出码 2 报错。
+
+```bash
+python cli.py examples/jd_backend.md examples/resume_strong.md --json
+python cli.py examples/jd_backend.md --resume-dir examples/batch_resumes --json
+```
+
+单份输出（`examples/` 真实运行，每数组仅截取首项展示）：
+
+```json
+{
+  "result": {
+    "total_score": 88.0,
+    "grade": "A",
+    "grade_label": "强烈推荐",
+    "missing_required_skills": ["RESTful API"],
+    "semantic_enabled": true,
+    "provider": "mock",
+    "breakdown": [
+      {"factor": "required_skills", "base_weight": 0.4, "effective_weight": 0.4, "score": 85.7, "contribution": 34.28, "disabled": false}
+    ],
+    "reasons": [
+      {
+        "text": "硬性技能「Docker」在简历中命中",
+        "factor": "required_skills",
+        "evidence": [
+          {"source": "resume", "snippet": "Docker", "start": 164, "end": 170}
+        ]
+      }
+    ]
+  }
+}
+```
+
+批量输出 `{results: [...]}`，成功条目形如 `{"file": "chen_ming.md", "total_score": 84.6, "grade": "B", "grade_label": "推荐", "missing_required_skills": ["RESTful API"]}`，失败条目形如 `{"file": "empty.md", "error": "文件为空"}`。
+
+字段简表：
+
+| 字段 | 含义 |
+|---|---|
+| `result.total_score` / `grade` / `grade_label` | 总分（0-100）与等级（A 强烈推荐 / B 推荐 / C 待定 / D 不匹配） |
+| `result.missing_required_skills` | 硬性技能缺口列表 |
+| `result.semantic_enabled` / `provider` | 语义因素是否启用、provider 名（禁用时为 `disabled`） |
+| `result.degraded_note` | provider 降级/禁用说明（仅降级时出现） |
+| `result.breakdown[]` | 逐因素：`factor` 名称；`base_weight` 基础权重、`effective_weight` 摊回后生效权重；`score` 因素得分（0-100）；`contribution` 贡献 = 生效权重 × 得分（合计即总分）；`disabled` JD 无依据时禁用（贡献 0） |
+| `result.reasons[]` | 打分理由扁平列表：`text` 理由文本、`factor` 所属因素、`evidence[]` 支撑证据 |
+| `evidence[]` | `source`（jd/resume）、`snippet` 原文片段、`start`/`end` 字符偏移（按偏移切原文可精确还原片段，可回溯校验） |
+| 批量 `results[]` | 条目顺序与文本模式一致：成功按 `total_score` 降序在前，失败（`{file, error}`）按文件名序殿后 |
 
 ## 交互 Demo
 
@@ -182,7 +233,7 @@ python cli.py jd.txt --resume-dir resumes/ --vocab my_vocab.json
 
 本机（Windows 10，Python 3.10.9）实测，以下数字均为真实运行结果：
 
-- **测试**：`python -m pytest -q` → `117 passed in 7.60s`
+- **测试**：`python -m pytest -q` → `122 passed in 3.61s`
 - **静态检查**：`ruff check .` 全绿（规则集 E/F/W/I/B/UP、行宽 120，与 llm-eval-kit 同基线），CI 独立 lint job 失败即红
 - **依赖**：`requirements.txt` 钉死本机实测通过的精确版本（CI 可复现，含 Streamlit Demo 依赖）；`pyproject.toml` 提供库语义的版本范围
 - **示例匹配**（`examples/` 真实运行）：
@@ -218,7 +269,7 @@ jd-resume-matcher/
 ├── cli.py              # CLI 演示命令（单对 + 批量模式）
 ├── streamlit_app.py    # Streamlit 交互 Demo（单份匹配 + 批量筛选，纯函数核心 + 薄壳渲染）
 ├── examples/           # 示例 JD、简历与批量目录 batch_resumes/
-├── tests/              # 117 个测试
+├── tests/              # 122 个测试
 ├── pyproject.toml      # 包元数据与依赖范围（精确锁定见 requirements.txt）
 └── .github/workflows/ci.yml
 ```
@@ -236,6 +287,12 @@ jd-resume-matcher/
 7. **专业仅解析不打分**：简历专业名与 JD"计算机相关"没有对齐词表，专业匹配只出现在解析结果里。
 8. **批量模式是串行扫描**：只认目录顶层 `.md`/`.txt`（不递归子目录），逐份同步打分，大目录（百份以上）无并发与进度输出；批量结果不带逐条评分明细，需回单条模式查看；`--csv` 导出的也是扁平汇总列（名次/总分/等级/缺口），不含逐因素 `score_breakdown`。
 9. **无鉴权**：`/match` 适合本地/内网演示；公网部署需自行加网关鉴权与限流（输入已限 5 万字符）。
+
+## 同系列作品
+
+- [作品集门户](https://lii-lii321.github.io/portfolio/)：全部项目的在线导航与说明
+- [llm-eval-kit](https://github.com/lii-lii321/llm-eval-kit)：离线可跑的 RAG 检索与 LLM 应用评测工具库——合成评测集 / 检索指标 / LLM-as-judge / badcase 归因 / Markdown+HTML 报告
+- [credit-risk-modeling](https://github.com/lii-lii321/credit-risk-modeling)：端到端信贷违约风险建模——WOE/IV · LR vs LightGBM · SHAP · PSI · FastAPI 评分服务
 
 ## License
 

@@ -121,11 +121,11 @@ def test_cli_vocab_flag_enables_new_skill(tmp_path, capsys):
     resume.write_text(_RUST_RESUME, encoding="utf-8")
 
     assert main([str(jd), str(resume), "--json", "--no-semantic"]) == 0
-    default_total = json.loads(capsys.readouterr().out)["total_score"]
+    default_total = json.loads(capsys.readouterr().out)["result"]["total_score"]
 
     vocab = _write_user_vocab(tmp_path, {"Rust": ["rust"]})
     assert main([str(jd), str(resume), "--json", "--no-semantic", "--vocab", str(vocab)]) == 0
-    custom_total = json.loads(capsys.readouterr().out)["total_score"]
+    custom_total = json.loads(capsys.readouterr().out)["result"]["total_score"]
 
     assert custom_total == 100.0 and default_total < 50.0
 
