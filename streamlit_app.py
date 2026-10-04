@@ -8,6 +8,7 @@
 默认填充 examples/ 的 JD 与简历，页面打开即呈现完整匹配结果（TTFS）。
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from matcher.constants import MAX_TEXT_CHARS
 from matcher.export import batch_to_csv
 from matcher.models import BatchResult, MatchResult
 from matcher.service import match_jd_resume
+from matcher.taxonomy import merged_skill_taxonomy, parse_vocab_document
 
 EXAMPLES_DIR = _REPO_ROOT / "examples"
 SUPPORTED_SUFFIXES = (".md", ".txt")
@@ -75,13 +77,32 @@ def load_example_batch(examples_dir: Path | None = None) -> tuple[str, list[tupl
     return jd, resumes
 
 
-def run_single_match(jd_text: str, resume_text: str, use_semantic: bool = True) -> MatchResult:
+def parse_uploaded_vocab(raw: bytes | None) -> dict[str, list[str]] | None:
+    """上传词表 JSON 字节 -> 与内置合并后的技能词表；未上传返回 None，非法内容抛 ValueError。
+
+    与 CLI --vocab 走同一条校验/合并管线（matcher/taxonomy.py）：
+    先校验 "skills" 包装结构，再按规范名叠加到内置词表（用户条目优先）。
+    """
+    if raw is None:
+        return None
+    doc = json.loads(raw.decode("utf-8"))  # JSONDecodeError 是 ValueError 子类
+    user = parse_vocab_document(doc, origin="上传词表")
+    return merged_skill_taxonomy(user)
+
+
+def run_single_match(
+    jd_text: str,
+    resume_text: str,
+    use_semantic: bool = True,
+    skill_taxonomy: dict[str, list[str]] | None = None,
+) -> MatchResult:
     """调核心层跑单份匹配（不带结构化画像，展示层用不到）。"""
     return match_jd_resume(
         jd_text=jd_text,
         resume_text=resume_text,
         use_semantic=use_semantic,
         include_profiles=False,
+        skill_taxonomy=skill_taxonomy,
     )
 
 
@@ -89,9 +110,16 @@ def run_batch_match(
     jd_text: str,
     resume_items: list[tuple[str, str]],
     use_semantic: bool = True,
+    skill_taxonomy: dict[str, list[str]] | None = None,
 ) -> BatchResult:
     """调核心层跑批量匹配：一份 JD 对 (文件名, 文本) 列表，排序与容错复用 matcher/batch.py。"""
-    return match_texts(jd_text, resume_items, jd_path_label="<Streamlit 批量>", use_semantic=use_semantic)
+    return match_texts(
+        jd_text,
+        resume_items,
+        jd_path_label="<Streamlit 批量>",
+        use_semantic=use_semantic,
+        skill_taxonomy=skill_taxonomy,
+    )
 
 
 def weighted_contributions(result: MatchResult) -> dict[str, float]:
@@ -172,6 +200,16 @@ def _render_single(default_jd: str, default_resume: str) -> None:
     with right:
         resume_text = st.text_area("简历文本", value=default_resume, height=340)
     use_semantic = st.toggle("启用语义因素（mock provider，离线确定性）", value=True)
+    vocab_file = st.file_uploader(
+        "自定义技能词表（JSON，可选；格式同 CLI --vocab，上传即叠加到内置词表）",
+        type=["json"],
+        key="single_vocab",
+    )
+    try:
+        skill_taxonomy = parse_uploaded_vocab(vocab_file.getvalue() if vocab_file is not None else None)
+    except ValueError as exc:
+        st.error(f"自定义词表加载失败：{exc}")
+        return
 
     jd_text, resume_text = jd_text.strip(), resume_text.strip()
     if not jd_text or not resume_text:
@@ -181,7 +219,7 @@ def _render_single(default_jd: str, default_resume: str) -> None:
         st.error(f"单侧输入超过上限 {MAX_TEXT_CHARS} 字符（与核心层口径一致）。")
         return
 
-    result = run_single_match(jd_text, resume_text, use_semantic=use_semantic)
+    result = run_single_match(jd_text, resume_text, use_semantic=use_semantic, skill_taxonomy=skill_taxonomy)
 
     m1, m2, m3 = st.columns(3)
     m1.metric("总分", f"{result.total_score}")
@@ -219,6 +257,16 @@ def _render_batch(default_jd: str, example_items: list[tuple[str, str]]) -> None
         accept_multiple_files=True,
     )
     use_semantic = st.toggle("启用语义因素（mock provider）", value=True, key="batch_semantic")
+    vocab_file = st.file_uploader(
+        "自定义技能词表（JSON，可选；格式同 CLI --vocab，对批量同样生效）",
+        type=["json"],
+        key="batch_vocab",
+    )
+    try:
+        skill_taxonomy = parse_uploaded_vocab(vocab_file.getvalue() if vocab_file is not None else None)
+    except ValueError as exc:
+        st.error(f"自定义词表加载失败：{exc}")
+        return
 
     if uploaded:
         # errors="replace"：Demo 场景下非 UTF-8 字节以占位符呈现而非整份失败
@@ -233,7 +281,7 @@ def _render_batch(default_jd: str, example_items: list[tuple[str, str]]) -> None
     if not jd_text:
         st.info("请先粘贴 JD 文本。")
         return
-    batch = run_batch_match(jd_text, items, use_semantic=use_semantic)
+    batch = run_batch_match(jd_text, items, use_semantic=use_semantic, skill_taxonomy=skill_taxonomy)
 
     if batch.total == 0:
         st.info("没有可比较的简历文件。")

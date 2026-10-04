@@ -7,7 +7,15 @@ import pytest
 
 from cli import main
 from matcher.service import match_jd_resume
-from matcher.taxonomy import SKILL_TAXONOMY, load_vocab
+from matcher.taxonomy import (
+    MAX_ALIAS_CHARS,
+    MAX_ALIASES_PER_SKILL,
+    MAX_VOCAB_ENTRIES,
+    SKILL_TAXONOMY,
+    load_vocab,
+    merged_skill_taxonomy,
+    parse_vocab_document,
+)
 
 _VOCAB_PATH = Path(__file__).resolve().parent.parent / "matcher" / "data" / "vocab.json"
 
@@ -142,3 +150,34 @@ def test_cli_vocab_rejects_invalid_json(tmp_path):
     with pytest.raises(SystemExit) as excinfo:
         main(["--demo", "--vocab", str(bad)])
     assert excinfo.value.code != 0
+
+
+# ---------- API/Streamlit 复用的文档校验、合并与资源上限 ----------
+
+
+def test_parse_vocab_document_accepts_wrapper_form_and_rejects_bad_docs():
+    assert parse_vocab_document({"skills": {"Rust": ["rust"]}}, origin="测试") == {"Rust": ["rust"]}
+    with pytest.raises(ValueError):
+        parse_vocab_document({"schema_version": 1}, origin="测试")  # 缺 skills
+    with pytest.raises(ValueError):
+        parse_vocab_document(["not", "a", "dict"], origin="测试")  # 顶层非对象
+    with pytest.raises(ValueError):
+        parse_vocab_document({"skills": {"Rust": "rust"}}, origin="测试")  # 别名非列表
+
+
+def test_merged_skill_taxonomy_same_merge_semantics_as_load_vocab():
+    merged = merged_skill_taxonomy({"Rust": ["rust"], "Python": ["py"]})
+    assert merged["Rust"] == ["rust"]  # 新增
+    assert merged["Python"] == ["py"]  # 用户条目整体覆盖
+    assert merged["Java"] == SKILL_TAXONOMY["Java"]  # 未提及的内置条目保留
+    assert set(merged) == set(SKILL_TAXONOMY) | {"Rust"}
+    assert merged_skill_taxonomy({}) == SKILL_TAXONOMY  # 空映射 = 无叠加，不是错误
+
+
+def test_vocab_resource_limits_reject_oversize_user_input():
+    with pytest.raises(ValueError, match="条目数超过上限"):
+        merged_skill_taxonomy({f"S{i}": ["x"] for i in range(MAX_VOCAB_ENTRIES + 1)})
+    with pytest.raises(ValueError, match="别名数超过上限"):
+        merged_skill_taxonomy({"Rust": [f"a{i}" for i in range(MAX_ALIASES_PER_SKILL + 1)]})
+    with pytest.raises(ValueError, match="字符的别名"):
+        merged_skill_taxonomy({"Rust": ["x" * (MAX_ALIAS_CHARS + 1)]})

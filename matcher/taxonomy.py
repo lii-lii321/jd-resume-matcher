@@ -41,21 +41,17 @@ DOMAIN_TAXONOMY: dict[str, list[str]] = {
 }
 
 
-def _parse_vocab_document(raw: str, origin: str) -> dict[str, list[str]]:
-    """解析词表 JSON 文本并校验结构，返回 规范名 -> 别名列表。
+# 用户词表资源上限：词表驱动解析循环（别名数 × 全文扫描），API/上传等
+# 不可信入口必须封顶，防止超大词表把单次匹配拖到超时
+MAX_VOCAB_ENTRIES = 500  # 最多技能规范名数
+MAX_ALIASES_PER_SKILL = 50  # 单个规范名最多别名数
+MAX_ALIAS_CHARS = 80  # 单个别名字符上限
 
-    要求顶层对象含 "skills" 字段（规范名 -> 非空别名列表）；schema_version /
-    description 为注释性字段，加载时不校验其取值。结构非法抛 ValueError。
-    """
-    try:
-        doc = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"{origin} 不是合法 JSON：{exc}") from exc
-    if not isinstance(doc, dict):
-        raise ValueError(f"{origin} 顶层必须是 JSON 对象")
-    skills = doc.get("skills")
-    if not isinstance(skills, dict):
-        raise ValueError(f'{origin} 缺少 "skills" 字段（应为 规范名 -> 别名列表 的对象）')
+
+def _validate_skills_mapping(skills: dict, origin: str) -> dict[str, list[str]]:
+    """校验 规范名 -> 别名列表 映射并做长度规整，超限/结构不符抛 ValueError。"""
+    if len(skills) > MAX_VOCAB_ENTRIES:
+        raise ValueError(f"{origin} 技能条目数超过上限 {MAX_VOCAB_ENTRIES}")
 
     taxonomy: dict[str, list[str]] = {}
     for canonical, aliases in skills.items():
@@ -63,8 +59,45 @@ def _parse_vocab_document(raw: str, origin: str) -> dict[str, list[str]]:
             raise ValueError(f"{origin} 存在空的技能规范名")
         if not isinstance(aliases, list) or not aliases or not all(isinstance(a, str) and a.strip() for a in aliases):
             raise ValueError(f"{origin} 中技能「{canonical}」的别名必须是非空字符串列表")
-        taxonomy[canonical.strip()] = [a.strip() for a in aliases]
+        if len(aliases) > MAX_ALIASES_PER_SKILL:
+            raise ValueError(f"{origin} 中技能「{canonical}」的别名数超过上限 {MAX_ALIASES_PER_SKILL}")
+        stripped = [a.strip() for a in aliases]
+        if max(len(a) for a in stripped) > MAX_ALIAS_CHARS:
+            raise ValueError(f"{origin} 中技能「{canonical}」存在超过 {MAX_ALIAS_CHARS} 字符的别名")
+        taxonomy[canonical.strip()] = stripped
     return taxonomy
+
+
+def parse_vocab_document(doc: object, origin: str) -> dict[str, list[str]]:
+    """校验词表文档对象（json.loads 之后、含 "skills" 包装的形态），返回 规范名 -> 别名列表。
+
+    schema_version / description 为注释性字段，不校验取值；结构非法抛 ValueError。
+    """
+    if not isinstance(doc, dict):
+        raise ValueError(f"{origin} 顶层必须是 JSON 对象")
+    skills = doc.get("skills")
+    if not isinstance(skills, dict):
+        raise ValueError(f'{origin} 缺少 "skills" 字段（应为 规范名 -> 别名列表 的对象）')
+    return _validate_skills_mapping(skills, origin)
+
+
+def _parse_vocab_document(raw: str, origin: str) -> dict[str, list[str]]:
+    """解析词表 JSON 文本并校验结构，返回 规范名 -> 别名列表。"""
+    try:
+        doc = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{origin} 不是合法 JSON：{exc}") from exc
+    return parse_vocab_document(doc, origin)
+
+
+def merged_skill_taxonomy(skills: dict[str, list[str]], origin: str = "自定义词表") -> dict[str, list[str]]:
+    """校验用户技能映射并与内置词表按规范名合并（用户条目整体覆盖，新条目追加）。
+
+    供不走文件路径的入口（API custom_vocab、Streamlit 词表上传）复用与 --vocab
+    完全相同的校验与合并语义；校验失败抛 ValueError，绝不静默放行。
+    """
+    validated = _validate_skills_mapping(skills, origin)
+    return {**_load_bundled_vocab(), **validated}
 
 
 def _load_bundled_vocab() -> dict[str, list[str]]:

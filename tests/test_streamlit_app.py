@@ -5,11 +5,15 @@
 批量 chen_ming 84.6（B）> lin_xiaoyu 48.5（D）> wang_dalisheng 29.7（D）。
 """
 
+import json
 from pathlib import Path
+
+import pytest
 
 import streamlit_app as app
 from matcher.batch import match_directory
 from matcher.export import CSV_HEADER
+from matcher.taxonomy import SKILL_TAXONOMY
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _EXAMPLES = _REPO_ROOT / "examples"
@@ -157,3 +161,46 @@ def test_streamlit_app_renders_defaults_headlessly():
     assert len(at.text_area) >= 2  # 单份匹配页的 JD 与简历默认预填
     joined = "\n".join(md.value for md in at.markdown)
     assert "贡献" in joined  # 打分理由已带权重贡献渲染出来
+
+
+# ---------- 自定义词表上传（parse_uploaded_vocab 纯函数 + 匹配联动） ----------
+
+
+def test_parse_uploaded_vocab_none_returns_none():
+    assert app.parse_uploaded_vocab(None) is None
+
+
+def test_parse_uploaded_vocab_merges_user_entries_over_bundled():
+    raw = json.dumps(
+        {"schema_version": 1, "skills": {"Rust": ["rust"], "Python": ["py"]}},
+        ensure_ascii=False,
+    ).encode("utf-8")
+    merged = app.parse_uploaded_vocab(raw)
+    assert merged is not None
+    assert merged["Rust"] == ["rust"]  # 新增
+    assert merged["Python"] == ["py"]  # 用户条目覆盖内置
+    assert merged["Java"] == SKILL_TAXONOMY["Java"]  # 未提及条目保留
+
+
+def test_parse_uploaded_vocab_rejects_invalid_json_and_structure():
+    with pytest.raises(ValueError):
+        app.parse_uploaded_vocab(b"{not json")
+    with pytest.raises(ValueError):
+        app.parse_uploaded_vocab(json.dumps({"schema_version": 1}).encode("utf-8"))  # 缺 skills
+
+
+def test_single_and_batch_match_honor_custom_vocab():
+    rust_jd = "任职要求：3年以上 Rust 后端开发经验。"
+    rust_resume = "5年 Rust 后端开发经验。"
+    taxonomy = {**SKILL_TAXONOMY, "Rust": ["rust"]}
+
+    single = app.run_single_match(rust_jd, rust_resume, use_semantic=False, skill_taxonomy=taxonomy)
+    default = app.run_single_match(rust_jd, rust_resume, use_semantic=False)
+    assert single.total_score == 100.0
+    assert default.total_score < 50.0  # 默认词表不认识 Rust
+
+    batch = app.run_batch_match(
+        rust_jd, [("rust_dev.md", rust_resume)], use_semantic=False, skill_taxonomy=taxonomy
+    )
+    assert (batch.matched, batch.failed) == (1, 0)
+    assert batch.entries[0].result.total_score == 100.0
