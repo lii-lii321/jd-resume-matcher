@@ -199,8 +199,6 @@ def test_single_and_batch_match_honor_custom_vocab():
     assert single.total_score == 100.0
     assert default.total_score < 50.0  # 默认词表不认识 Rust
 
-    batch = app.run_batch_match(
-        rust_jd, [("rust_dev.md", rust_resume)], use_semantic=False, skill_taxonomy=taxonomy
-    )
+    batch = app.run_batch_match(rust_jd, [("rust_dev.md", rust_resume)], use_semantic=False, skill_taxonomy=taxonomy)
     assert (batch.matched, batch.failed) == (1, 0)
     assert batch.entries[0].result.total_score == 100.0
