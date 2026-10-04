@@ -51,6 +51,57 @@ def test_missing_args_exits_with_error():
     assert excinfo.value.code != 0
 
 
+# ---------- --weights 自定义因素权重 ----------
+
+
+def test_demo_custom_weights_visible_in_breakdown(capsys):
+    assert main(["--demo", "--json", "--no-semantic", "--weights", "experience=0.5,education=0.5"]) == 0
+    body = json.loads(capsys.readouterr().out)["result"]
+    base = {f["factor"]: f["base_weight"] for f in body["breakdown"]}
+    assert base["experience"] == 0.5 and base["education"] == 0.5
+    assert base["required_skills"] == 0.4  # 未提及的因素保留默认
+
+
+def test_demo_default_breakdown_unchanged_without_flag(capsys):
+    assert main(["--demo", "--json", "--no-semantic"]) == 0
+    body = json.loads(capsys.readouterr().out)["result"]
+    base = {f["factor"]: f["base_weight"] for f in body["breakdown"]}
+    assert base == {
+        "required_skills": 0.4,
+        "preferred_skills": 0.1,
+        "experience": 0.2,
+        "education": 0.15,
+        "domain": 0.1,
+        "semantic": 0.05,
+    }
+
+
+def test_weights_unknown_factor_exits_2(capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        main(["--demo", "--weights", "salary=0.5"])
+    assert excinfo.value.code == 2
+    assert "未知因素名" in capsys.readouterr().err
+
+
+def test_weights_missing_equals_exits_2():
+    with pytest.raises(SystemExit) as excinfo:
+        main(["--demo", "--weights", "experience 0.5"])
+    assert excinfo.value.code == 2
+
+
+def test_weights_non_numeric_exits_2():
+    with pytest.raises(SystemExit) as excinfo:
+        main(["--demo", "--weights", "experience=high"])
+    assert excinfo.value.code == 2
+
+
+def test_weights_non_positive_exits_2(capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        main(["--demo", "--weights", "experience=0"])
+    assert excinfo.value.code == 2
+    assert "权重必须是正数" in capsys.readouterr().err
+
+
 # ---------- 批量模式（--resume-dir） ----------
 
 

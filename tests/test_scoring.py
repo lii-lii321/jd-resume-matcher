@@ -1,7 +1,10 @@
 """打分器测试：总分边界、权重重分配、理由证据可回溯。"""
 
+import pytest
+
+from matcher.constants import FACTOR_WEIGHTS
 from matcher.parser import parse_profile
-from matcher.scoring import compute_match
+from matcher.scoring import compute_match, resolve_factor_weights
 
 JD_FULL = """任职要求：
 - 本科及以上学历；
@@ -14,9 +17,13 @@ RESUME_FULL = """计算机专业硕士学历。
 """
 
 
-def _run(jd_text=JD_FULL, resume_text=RESUME_FULL, scorer=None):
+def _run(jd_text=JD_FULL, resume_text=RESUME_FULL, scorer=None, factor_weights=None):
     jd, resume = parse_profile(jd_text, "jd"), parse_profile(resume_text, "resume")
-    return compute_match(jd_text, resume_text, jd, resume, semantic_scorer=scorer), jd, resume
+    return (
+        compute_match(jd_text, resume_text, jd, resume, semantic_scorer=scorer, factor_weights=factor_weights),
+        jd,
+        resume,
+    )
 
 
 def test_perfect_match_scores_exact_100():
@@ -65,6 +72,50 @@ def test_perfect_required_skills_scores_100():
 def test_missing_skill_reported_in_gap():
     result = _run(resume_text="本科，1年 Python 经验，只会 FastAPI")[0]
     assert "SQL" in result[4]  # 技能按规范名报告：JD 的 MySQL 归一为 SQL
+
+
+# ---------- 自定义因素权重（resolve_factor_weights + compute_match 联动） ----------
+
+
+def test_resolve_none_returns_builtin_mapping():
+    assert resolve_factor_weights(None) is FACTOR_WEIGHTS
+
+
+def test_resolve_merges_over_defaults_without_normalizing():
+    weights = resolve_factor_weights({"experience": 0.5})
+    assert weights["experience"] == 0.5
+    assert weights["required_skills"] == FACTOR_WEIGHTS["required_skills"]  # 未提及保留默认
+    assert abs(sum(weights.values()) - 1.3) < 1e-9  # 总和不强制为 1，摊回机制负责归一
+
+
+def test_resolve_rejects_unknown_factor_and_bad_values():
+    with pytest.raises(ValueError, match="未知因素名"):
+        resolve_factor_weights({"salary": 0.5})
+    with pytest.raises(ValueError, match="权重必须是正数"):
+        resolve_factor_weights({"experience": 0.0})
+    with pytest.raises(ValueError, match="权重必须是正数"):
+        resolve_factor_weights({"experience": -0.1})
+    with pytest.raises(ValueError, match="权重必须是正数"):
+        resolve_factor_weights({"experience": True})  # bool 不是合法权重
+
+
+def test_custom_weights_change_base_weight_and_stay_normalized():
+    result, _, _ = _run(factor_weights={"experience": 0.5})
+    total, breakdown = result[0], result[3]
+    experience = next(f for f in breakdown if f.factor == "experience")
+    assert experience.base_weight == 0.5
+    active = [f for f in breakdown if not f.disabled]
+    # effective_weight 按 4 位小数取整，非整除权重下求和有 ~1e-4 量级舍入偏差
+    assert abs(sum(f.effective_weight for f in active) - 1.0) < 1e-3
+    assert abs(total - sum(f.score * f.effective_weight for f in active)) < 0.5
+
+
+def test_preferred_reason_cites_custom_weight():
+    jd_text = "任职要求：Python。\n加分项：熟悉 Kubernetes。"
+    result, _, _ = _run(jd_text=jd_text, resume_text="会 Python", factor_weights={"preferred_skills": 0.5})
+    preferred = next(f for f in result[3] if f.factor == "preferred_skills")
+    details = "；".join(r.detail for r in preferred.reasons)
+    assert "权重仅 0.5" in details
 
 
 def test_semantic_disabled_redistributes_weights():

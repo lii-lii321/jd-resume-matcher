@@ -14,7 +14,7 @@ JD↔简历结构化匹配与解释器：纯离线规则抽取 + 多因素加权
 - **批量模式**：`--resume-dir` 一份 JD 筛整个简历文件夹，按总分降序输出候选名单；单份文件损坏/为空只记失败不中断整批，`--min-score` 做"无人达标即失败"的流水线闸门，`--csv` 导出 utf-8-sig 候选名单（Excel 友好）
 - **交互 Demo**：`streamlit run streamlit_app.py` 单文件双页签（单份匹配 + 批量筛选），示例数据预填、打开即出完整结果，支持上传自定义词表 JSON（坏词表显式报错不静默），展示层之外的纯函数可独立测试
 - **语义路**：嵌入 provider 可插拔 —— `mock`（确定性字符 3-gram 哈希，默认）与 `openai_compatible`（可选）；无 API Key / URL 非法 / 调用失败时**三级优雅降级**到纯规则
-- **交付**：FastAPI `/match` 端点 + CLI 演示命令 + Streamlit 交互 Demo + 133 个 pytest 全绿 + ruff/mypy 静态检查门禁
+- **交付**：FastAPI `/match` 端点 + CLI 演示命令 + Streamlit 交互 Demo + 144 个 pytest 全绿 + ruff/mypy 静态检查门禁
 
 ## 架构
 
@@ -83,7 +83,7 @@ curl -X POST http://127.0.0.1:8000/match -H "Content-Type: application/json" -d 
 EOF
 ```
 
-可选命令行参数：`--no-semantic`（纯规则）、`--json`（结构化输出，stdout 纯 JSON 可直接管道，见下节；与 `--csv` 互斥）、`--min-score N`（低于阈值退出码 1，可做流水线闸门；批量模式语义为"无人达标退出码 1"）、`--resume-dir 目录`（批量模式，需同时给 JD 文件）、`--vocab 词表.json`（叠加自定义技能词表，见下节）、`--provider openai_compatible --base-url ... --model ...`。
+可选命令行参数：`--no-semantic`（纯规则）、`--json`（结构化输出，stdout 纯 JSON 可直接管道，见下节；与 `--csv` 互斥）、`--min-score N`（低于阈值退出码 1，可做流水线闸门；批量模式语义为"无人达标退出码 1"）、`--resume-dir 目录`（批量模式，需同时给 JD 文件）、`--vocab 词表.json`（叠加自定义技能词表，见下节）、`--weights experience=0.4,education=0.1`（覆盖因素基础权重：未提及的因素保留默认，总和无须为 1，摊回机制自动归一化；因素名非法或权重非正数退出码 2）、`--provider openai_compatible --base-url ... --model ...`。
 
 批量模式输出示例（真实运行）：
 
@@ -204,6 +204,9 @@ streamlit run streamlit_app.py
 - **权重重分配**：JD 没写学历/领域/加分项时，对应因素禁用，其权重按比例摊回其余因素 —— 不同 JD 的总分始终 0-100 且可比；
 - **证据回溯**：所有命中先在原文定位（`start`/`end` 字符偏移），理由引用证据而非凭空生成，测试强制校验 `source_text[start:end] == evidence.text`。
 
+权重可用 `--weights` 按岗位族覆盖（CLI）：只写要调的因素键、其余保留默认，总和不要求为 1——
+上述摊回机制会把生效权重归一化，因此自定义后总分口径不变；锚点测试固定默认权重表防漂移。
+
 语义因素的可选 provider：
 
 ```bash
@@ -252,7 +255,7 @@ python cli.py jd.txt --resume-dir resumes/ --vocab my_vocab.json
 
 本机（Windows 10，Python 3.10.9）实测，以下数字均为真实运行结果：
 
-- **测试**：`python -m pytest -q` → `133 passed`（词表三入口叠加/校验/资源上限各有专项覆盖）
+- **测试**：`python -m pytest -q` → `144 passed`（词表三入口叠加/校验/资源上限与自定义权重各有专项覆盖）
 - **静态检查**：`ruff check .` 全绿（规则集 E/F/W/I/B/UP、行宽 120，与 llm-eval-kit 同基线），CI 独立 lint job 失败即红
 - **依赖**：`requirements.txt` 钉死本机实测通过的精确版本（CI 可复现，含 Streamlit Demo 依赖）；`pyproject.toml` 提供库语义的版本范围
 - **示例匹配**（`examples/` 真实运行）：
@@ -288,7 +291,7 @@ jd-resume-matcher/
 ├── cli.py              # CLI 演示命令（单对 + 批量模式）
 ├── streamlit_app.py    # Streamlit 交互 Demo（单份匹配 + 批量筛选，纯函数核心 + 薄壳渲染）
 ├── examples/           # 示例 JD、简历与批量目录 batch_resumes/
-├── tests/              # 133 个测试
+├── tests/              # 144 个测试
 ├── pyproject.toml      # 包元数据与依赖范围（精确锁定见 requirements.txt）
 └── .github/workflows/ci.yml
 ```

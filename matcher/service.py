@@ -15,11 +15,14 @@ def match_jd_resume(
     model: str | None = None,
     include_profiles: bool = True,
     skill_taxonomy: dict[str, list[str]] | None = None,
+    factor_weights: dict[str, float] | None = None,
 ) -> MatchResult:
     """JD↔简历匹配主入口。openai_compatible 缺 key/URL 非法时自动降级，调用中失败时再降级为纯规则。
 
     skill_taxonomy 为 None 时用内置技能词表；传入自定义词表（如
     taxonomy.load_vocab(extra) 的合并结果）时双侧解析均按其匹配。
+    factor_weights 为自定义因素基础权重（见 scoring.resolve_factor_weights 的
+    合并语义与校验规则；None 用内置默认）。
     """
     jd = parse_profile(jd_text, "jd", skill_taxonomy)
     resume = parse_profile(resume_text, "resume", skill_taxonomy)
@@ -31,12 +34,14 @@ def match_jd_resume(
 
     try:
         total, grade, label, breakdown, missing = compute_match(
-            jd_text, resume_text, jd, resume, semantic_scorer=provider
+            jd_text, resume_text, jd, resume, semantic_scorer=provider, factor_weights=factor_weights
         )
     except EmbeddingError as exc:
         # 运行中失败（网络/配额）：降级为纯规则打分，语义因素禁用、权重摊回
         degraded_note = f"语义打分运行失败（{exc}），已降级为纯规则"
-        total, grade, label, breakdown, missing = compute_match(jd_text, resume_text, jd, resume, semantic_scorer=None)
+        total, grade, label, breakdown, missing = compute_match(
+            jd_text, resume_text, jd, resume, semantic_scorer=None, factor_weights=factor_weights
+        )
         provider = None
 
     return MatchResult(

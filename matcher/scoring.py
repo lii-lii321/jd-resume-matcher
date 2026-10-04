@@ -45,7 +45,9 @@ def _required_skills_score(jd: ParsedProfile, resume: ParsedProfile) -> tuple[fl
     return score, reasons, missing
 
 
-def _preferred_skills_score(jd: ParsedProfile, resume: ParsedProfile) -> tuple[float | None, list[Reason]]:
+def _preferred_skills_score(
+    jd: ParsedProfile, resume: ParsedProfile, weight: float
+) -> tuple[float | None, list[Reason]]:
     """加分项命中率。JD 无加分项分节时禁用（返回 None，权重摊回其余因素）。"""
     preferred = jd.preferred_skill_names()
     if not preferred:
@@ -57,10 +59,10 @@ def _preferred_skills_score(jd: ParsedProfile, resume: ParsedProfile) -> tuple[f
 
     reasons = [Reason(detail=f"加分技能「{name}」在简历中命中", evidence=resume_hit[name].evidence) for name in matched]
     if missing:
+        missing_names = "、".join(missing)
         reasons.append(
             Reason(
-                detail=f"加分技能未命中：{'、'.join(missing)}（不作为硬性扣分主因，权重仅 "
-                f"{FACTOR_WEIGHTS['preferred_skills']}）",
+                detail=f"加分技能未命中：{missing_names}（不作为硬性扣分主因，权重仅 {weight:g}）",
                 evidence=[],
             )
         )
@@ -169,18 +171,42 @@ def _semantic_score(scorer: SemanticScorer | None, jd_text: str, resume_text: st
     ]
 
 
+def resolve_factor_weights(custom: dict[str, float] | None) -> dict[str, float]:
+    """校验自定义因素权重并返回合并后的基础权重表；None 原样返回内置默认。
+
+    合并语义：只覆盖给出的因素键，未提及的因素保留内置默认；总和不要求为 1——
+    打分器的权重摊回机制（active 权重 / active 权重和）天然把它归一化。
+    未知因素名、非正数权重、布尔值抛 ValueError。
+    """
+    if custom is None:
+        return FACTOR_WEIGHTS
+    unknown = sorted(set(custom) - set(FACTOR_WEIGHTS))
+    if unknown:
+        raise ValueError(f"未知因素名：{'、'.join(unknown)}（允许的因素：{'、'.join(FACTOR_WEIGHTS)}）")
+    bad = {k: v for k, v in custom.items() if isinstance(v, bool) or not isinstance(v, (int, float)) or v <= 0}
+    if bad:
+        raise ValueError(f"权重必须是正数：{bad}")
+    return {**FACTOR_WEIGHTS, **custom}
+
+
 def compute_match(
     jd_text: str,
     resume_text: str,
     jd: ParsedProfile,
     resume: ParsedProfile,
     semantic_scorer: SemanticScorer | None = None,
+    factor_weights: dict[str, float] | None = None,
 ) -> tuple[float, str, str, list[FactorScore], list[str]]:
-    """计算总分、等级、逐因素得分。返回 (total, grade, grade_label, breakdown, missing_required)。"""
+    """计算总分、等级、逐因素得分。返回 (total, grade, grade_label, breakdown, missing_required)。
+
+    factor_weights 为自定义基础权重（覆盖对应因素键，其余保留默认；总和无需为 1，
+    摊回机制自动归一化）。非法因素名/权重抛 ValueError。
+    """
+    weights = resolve_factor_weights(factor_weights)
     req_score, req_reasons, missing_required = _required_skills_score(jd, resume)
     raw_scores: dict[str, tuple[float | None, list[Reason]]] = {
         "required_skills": (req_score, req_reasons),
-        "preferred_skills": _preferred_skills_score(jd, resume),
+        "preferred_skills": _preferred_skills_score(jd, resume, weights["preferred_skills"]),
         "experience": _experience_score(jd, resume),
         "education": _education_score(jd, resume),
         "domain": _domain_score(jd, resume),
@@ -188,12 +214,12 @@ def compute_match(
     }
 
     active = {k: v for k, v in raw_scores.items() if v[0] is not None}
-    base_total = sum(FACTOR_WEIGHTS[k] for k in active) or 1.0
+    base_total = sum(weights[k] for k in active) or 1.0
 
     breakdown: list[FactorScore] = []
     total = 0.0
     for factor, (score, reasons) in raw_scores.items():
-        base_w = FACTOR_WEIGHTS[factor]
+        base_w = weights[factor]
         if score is None:
             breakdown.append(
                 FactorScore(

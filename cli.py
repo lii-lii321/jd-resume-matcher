@@ -11,6 +11,7 @@
   python cli.py jd.txt --resume-dir resumes/ --csv out.csv   # 批量结果导出 CSV（utf-8-sig）
   python cli.py jd.txt --resume-dir resumes/ --json         # 批量结果结构化输出（与 --csv 互斥）
   python cli.py jd.txt resume.txt --vocab my_vocab.json      # 叠加自定义技能词表（用户条目优先）
+  python cli.py jd.txt resume.txt --weights experience=0.4   # 覆盖因素权重（未提及保留默认，摊回自动归一）
 
 --json schema（与 --csv 互斥；提示/告警类文本一律走 stderr，保证 stdout 可直接管道）：
   单份：{"result": {total_score, grade, grade_label, missing_required_skills,
@@ -30,6 +31,7 @@ from typing import Any
 
 from matcher.batch import match_directory
 from matcher.export import write_batch_csv
+from matcher.scoring import resolve_factor_weights
 from matcher.service import match_jd_resume
 from matcher.taxonomy import load_vocab
 
@@ -68,6 +70,25 @@ Python、FastAPI、MySQL、Redis、Docker、Kafka、机器学习（入门）
 ## 领域
 金融、大数据
 """
+
+
+def _parse_weights(raw: str) -> dict[str, float]:
+    """解析 --weights 字符串（格式：因素=权重，逗号分隔），格式错误抛 ArgumentTypeError。"""
+    parsed: dict[str, float] = {}
+    for part in raw.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        key, sep, value = token.partition("=")
+        if not sep or not key.strip():
+            raise argparse.ArgumentTypeError(f"段 {token!r} 缺少 =（格式 因素=权重，如 experience=0.4）")
+        try:
+            parsed[key.strip()] = float(value)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"段 {token!r} 的权重 {value!r} 不是数字") from None
+    if not parsed:
+        raise argparse.ArgumentTypeError("未解析到任何 因素=权重 对（示例：experience=0.4,education=0.1）")
+    return parsed
 
 
 def _read_text(path: str) -> str:
@@ -200,6 +221,14 @@ def main(argv: list[str] | None = None) -> int:
         metavar="路径",
         help="自定义技能词表 JSON（与内置词表按规范名合并，用户条目优先；格式见 README 自定义词表）",
     )
+    parser.add_argument(
+        "--weights",
+        default=None,
+        type=_parse_weights,
+        metavar="因素=权重,...",
+        help="覆盖因素基础权重（如 experience=0.4,education=0.1）；未提及的因素保留默认，"
+        "总和无须为 1（摊回机制自动归一化）。因素名非法或权重非正数时报错退出",
+    )
     parser.add_argument("--json", action="store_true", help="输出 JSON")
     parser.add_argument(
         "--min-score",
@@ -216,6 +245,12 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, ValueError) as exc:
             parser.error(f"自定义词表加载失败：{exc}")
 
+    if args.weights is not None:
+        try:
+            resolve_factor_weights(args.weights)
+        except ValueError as exc:
+            parser.error(f"自定义权重非法：{exc}")
+
     if args.csv and not args.resume_dir:
         parser.error("--csv 仅支持批量模式（配合 --resume-dir 使用）")
 
@@ -229,6 +264,7 @@ def main(argv: list[str] | None = None) -> int:
         model=args.model,
         include_profiles=False,
         skill_taxonomy=skill_taxonomy,
+        factor_weights=args.weights,
     )
 
     if args.demo:
