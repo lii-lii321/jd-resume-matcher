@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jd-resume-matcher"
-version = "0.1.0"
+version = "1.0.0"
 description = "JD↔简历结构化匹配与解释器：离线规则抽取 + 多因素加权打分，理由可追溯证据片段"
 readme = "README.md"
 license = "MIT"

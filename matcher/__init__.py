@@ -4,4 +4,4 @@
 嵌入 provider 可插拔（mock 确定性实现 / openai_compatible，缺 key 自动降级）。
 """
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
